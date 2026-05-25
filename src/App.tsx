@@ -46,7 +46,8 @@ import {
   formatFriendlyDate, 
   formatDuration, 
   parseAndStyleMarkdown,
-  localPolishGrammar
+  localPolishGrammar,
+  localAIRefine
 } from './utils.tsx';
 import { 
   initAuth, 
@@ -73,10 +74,16 @@ declare global {
 export default function App() {
   // Navigation & Core state
   const [notes, setNotes] = useState<Note[]>([]);
-  const [selectedNote, setSelectedNote] = useState<Note | null>(null);
+  const [selectedNote, setSelectedNote] = useState<Note | null>(() => ({
+    filename: `note_draft_${Date.now()}.md`,
+    title: 'Drafting Sheet',
+    content: '',
+    createdAt: new Date().toISOString(),
+    transcriptionType: 'realtime'
+  }));
   const [searchTerm, setSearchTerm] = useState('');
-  const [isEditorMode, setIsEditorMode] = useState(false); // Toggle markdown raw edit
-  const [showLibrary, setShowLibrary] = useState(true); // Toggle clean library drawer
+  const [isEditorMode, setIsEditorMode] = useState(true); // Default to live markdown editor mode
+  const [showLibrary, setShowLibrary] = useState(false); // Hide library sidebar by default
 
   // Google OAuth Sync state
   const [user, setUser] = useState<User | null>(null);
@@ -87,7 +94,7 @@ export default function App() {
   const [googleSyncing, setGoogleSyncing] = useState(false);
 
   // Active inputs
-  const [noteTitle, setNoteTitle] = useState('');
+  const [noteTitle, setNoteTitle] = useState('Drafting Sheet');
   const [noteText, setNoteText] = useState('');
   const [currentTranscriptionType, setCurrentTranscriptionType] = useState<'realtime' | 'ai'>('realtime');
 
@@ -456,9 +463,16 @@ export default function App() {
       if (res.ok) {
         triggerToast("Note deleted", "success");
         if (selectedNote?.filename === filename) {
-          setSelectedNote(null);
-          setNoteTitle('');
+          setSelectedNote({
+            filename: `note_draft_${Date.now()}.md`,
+            title: 'Drafting Sheet',
+            content: '',
+            createdAt: new Date().toISOString(),
+            transcriptionType: 'realtime'
+          });
+          setNoteTitle('Drafting Sheet');
           setNoteText('');
+          setIsEditorMode(true);
         }
         await fetchNotesList();
         
@@ -501,57 +515,24 @@ ${noteText}`;
     }
   };
 
-  // --- REFINING STYLES (GEMINI) ---
+  // --- REFINING STYLES (LOCAL & OFFLINE) ---
   const applyAIRefinement = async (type: 'bullet_points' | 'checklist' | 'meeting_minutes' | 'journal' | 'raw') => {
     if (!noteText.trim()) {
       triggerToast("No content to refine!", "info");
       return;
     }
 
-    if (type === 'raw') {
-      setIsRefining(true);
-      try {
-        const polished = localPolishGrammar(noteText);
-        setNoteText(polished);
-        triggerToast("Punctuation & stutters clean!", "success");
-        if (selectedNote) {
-          await saveNoteToServer(polished);
-        }
-      } catch (err) {
-        triggerToast("Error polishing grammar locally.", "error");
-      } finally {
-        setIsRefining(false);
-      }
-      return;
-    }
-
-    if (apiHealth && !apiHealth.hasApiKey) {
-      triggerToast("Gemini Key is missing. Add GEMINI_API_KEY in block secrets.", "error");
-      return;
-    }
-
     setIsRefining(true);
-    triggerToast("Gemini organizing note...", "info");
     try {
-      const res = await fetch('/api/gemini/refine', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: noteText, noteType: type })
-      });
-
-      if (res.ok) {
-        const data = await res.json();
-        setNoteText(data.refinedText);
-        triggerToast("Formatting complete!", "success");
-        if (selectedNote) {
-          await saveNoteToServer(data.refinedText);
-        }
-      } else {
-        const err = await res.json();
-        triggerToast(err.error || "Formatting error", "error");
+      const refined = localAIRefine(noteText, type);
+      setNoteText(refined);
+      triggerToast("Formatted note successfully!", "success");
+      if (selectedNote) {
+        await saveNoteToServer(refined);
       }
-    } catch {
-      triggerToast("Connection failed during format request", "error");
+    } catch (err) {
+      console.error(err);
+      triggerToast("Error formatting note offline", "error");
     } finally {
       setIsRefining(false);
     }
@@ -889,13 +870,18 @@ ${noteText}`;
       {/* Top Header/Status bar */}
       <header className="bg-[#09090B] border-b border-[#1C1C1F] py-4 px-6 sticky top-0 z-30 flex items-center justify-between" id="primary-app-header">
         <div className="flex items-center gap-3">
-          <div className="bg-[#10B981]/10 text-[#10B981] p-1.5 rounded-lg flex items-center justify-center">
-            <Mic className="h-4.5 w-4.5" />
+          <div className="h-7 w-7 rounded-md overflow-hidden flex items-center justify-center border border-zinc-900 bg-[#121214] shrink-0">
+            <img 
+              src="/src/assets/images/echoscribe_logo_1779738531657.png" 
+              alt="EchoScribe Logo" 
+              className="h-full w-full object-cover" 
+              referrerPolicy="no-referrer" 
+            />
           </div>
           <div>
             <h1 className="text-sm font-bold text-white tracking-widest uppercase flex items-center gap-2">
               EchoScribe
-              <span className="h-1.5 w-1.5 rounded-full bg-[#10B981] animate-pulse"></span>
+              <span className="h-1.5 w-1.5 rounded-full bg-[#0099FF] animate-pulse"></span>
             </h1>
           </div>
         </div>
@@ -908,7 +894,7 @@ ${noteText}`;
             onClick={() => setShowSettingsPanel(!showSettingsPanel)}
             className={`p-2 rounded-lg transition-all flex items-center justify-center cursor-pointer ${
               showSettingsPanel 
-                ? 'bg-[#10B981]/15 text-[#10B981]' 
+                ? 'bg-[#0099FF]/15 text-[#0099FF]' 
                 : 'text-[#71717A] hover:text-white hover:bg-[#18181B]'
             }`}
             title="App Customization & Local PC Vault Setup"
@@ -922,7 +908,7 @@ ${noteText}`;
             onClick={() => setShowLibrary(!showLibrary)}
             className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold cursor-pointer transition-all border ${
               showLibrary 
-                ? 'bg-[#18181B] border-[#10B981]/40 text-white' 
+                ? 'bg-[#18181B] border-[#0099FF]/40 text-white' 
                 : 'bg-transparent border-[#1C1C1F] text-[#A1A1AA] hover:text-white hover:bg-[#18181B]'
             }`}
             title="Toggle Library Catalog"
@@ -934,7 +920,7 @@ ${noteText}`;
           {/* Sync status element */}
           {user ? (
             <div className="flex items-center gap-2 bg-[#18181B] border border-[#27272A] rounded-lg pl-3 pr-2 py-1" id="synced-google-account-pill">
-              <Cloud className="h-3.5 w-3.5 text-[#10B981]" />
+              <Cloud className="h-3.5 w-3.5 text-[#0099FF]" />
               <div className="text-[11px] font-medium text-[#D4D4D8] max-w-[150px] truncate leading-none">
                 {user.email}
               </div>
@@ -944,11 +930,11 @@ ${noteText}`;
               <button
                 onClick={() => syncNotesToGoogleDrive(false)}
                 disabled={googleSyncing}
-                className="p-1 hover:bg-[#27272A] rounded text-[#10B981] transition-colors cursor-pointer"
+                className="p-1 hover:bg-[#27272A] rounded text-[#0099FF] transition-colors cursor-pointer"
                 title="Sync library to Google Folder & update Sheet Index"
               >
                 {googleSyncing ? (
-                  <RefreshCw className="h-3 w-3 animate-spin text-[#10B981]" />
+                  <RefreshCw className="h-3 w-3 animate-spin text-[#0099FF]" />
                 ) : (
                   <Check className="h-3.5 w-3.5" />
                 )}
@@ -999,7 +985,7 @@ ${noteText}`;
               
               <div className="flex justify-between items-center border-b border-[#1C1C1F] pb-4">
                 <div className="flex items-center gap-2.5">
-                  <div className="p-1.5 rounded-md bg-[#10B981]/15 text-[#10B981]">
+                  <div className="p-1.5 rounded-md bg-[#0099FF]/15 text-[#0099FF]">
                     <Settings className="h-4.5 w-4.5" />
                   </div>
                   <div>
@@ -1021,11 +1007,11 @@ ${noteText}`;
                 <div className="space-y-3.5 bg-[#121214] p-5 rounded-xl border border-[#1C1C1F] flex flex-col justify-between">
                   <div className="space-y-2">
                     <div className="flex items-center gap-2 text-white font-bold text-xs uppercase tracking-wider">
-                      <BookOpen className="h-4 w-4 text-[#10B981]" />
+                      <BookOpen className="h-4 w-4 text-[#0099FF]" />
                       Obsidian Vault Integration
                     </div>
                     <p className="leading-relaxed text-[#8E8E93]">
-                      Obsidian operates purely on a folder of standard <code className="text-[#10B981] bg-[#10B981]/5 px-1 rounded font-mono text-[10px]">.md</code> files. Enter the folder path below to point EchoScribe directly to your Obsidian vault directory.
+                      Obsidian operates purely on a folder of standard <code className="text-[#0099FF] bg-[#0099FF]/5 px-1 rounded font-mono text-[10px]">.md</code> files. Enter the folder path below to point EchoScribe directly to your Obsidian vault directory.
                     </p>
                     <p className="text-[10px] italic text-[#71717A]">
                       Whenever you record or make edits, Markdown files will save directly inside your local vault vault!
@@ -1040,7 +1026,7 @@ ${noteText}`;
                         value={inputObsidianPath}
                         onChange={(e) => setInputObsidianPath(e.target.value)}
                         placeholder={window.navigator.platform.toLowerCase().includes('win') ? "C:\\Users\\Account\\MyObsidianVault" : "/Users/account/Obsidian/Vault"}
-                        className="flex-1 bg-[#09090B] border border-[#27272A] text-white text-[11px] font-mono p-2 rounded-lg placeholder-zinc-700 focus:outline-hidden focus:border-[#10B981] focus:ring-1 focus:ring-[#10B981]/20 transition-all text-ellipsis"
+                        className="flex-1 bg-[#09090B] border border-[#27272A] text-white text-[11px] font-mono p-2 rounded-lg placeholder-zinc-700 focus:outline-[#0099FF] focus:border-[#0099FF] focus:ring-1 focus:ring-[#0099FF]/20 transition-all text-ellipsis"
                       />
                       <button
                         onClick={() => handleSaveObsidianPath(inputObsidianPath)}
@@ -1052,7 +1038,7 @@ ${noteText}`;
                     
                     <div className="pt-2 text-[10px] text-zinc-500 space-y-1">
                       <div className="flex items-center gap-1">
-                        <span className="h-1.5 w-1.5 rounded-full bg-[#10B981]" />
+                        <span className="h-1.5 w-1.5 rounded-full bg-[#0099FF]" />
                         <span>Active Target:</span>
                       </div>
                       <div className="bg-[#09090B] p-2 rounded border border-zinc-900 break-all select-all font-mono text-[10px] text-zinc-400 leading-normal">
@@ -1066,7 +1052,7 @@ ${noteText}`;
                 <div className="space-y-3 bg-[#121214] p-5 rounded-xl border border-[#1C1C1F] lg:col-span-2 flex flex-col justify-between">
                   <div className="space-y-2">
                     <div className="flex items-center gap-2 text-white font-bold text-xs uppercase tracking-wider">
-                      <Monitor className="h-4 w-4 text-[#10B981]" />
+                      <Monitor className="h-4 w-4 text-[#0099FF]" />
                       Run Natively on your PC (Offline Local Server)
                     </div>
                     <p className="leading-relaxed text-[#8E8E93]">
@@ -1093,31 +1079,31 @@ ${noteText}`;
                       <p className="text-zinc-400 leading-relaxed text-[11px]">
                         Unpack the ZIP and open your computer Terminal in that folder. Install program dependencies by typing the command:
                       </p>
-                      <pre className="bg-zinc-950 p-1.5 rounded text-[10px] font-mono text-emerald-400 border border-zinc-850 select-all block mt-1.5 text-center">npm install</pre>
+                      <pre className="bg-zinc-950 p-1.5 rounded text-[10px] font-mono text-sky-400 border border-zinc-850 select-all block mt-1.5 text-center">npm install</pre>
                     </div>
 
                     <div className="bg-[#09090B] p-3 rounded-lg border border-[#1C1C1F] space-y-1">
                       <div className="font-semibold text-white flex items-center gap-1.5">
                         <span className="bg-[#18181B] border border-zinc-805 h-4 w-4 rounded-full inline-flex items-center justify-center text-[10px]">3</span>
-                        Gemini & Google Setup
+                        No API Keys Needed 🎉
                       </div>
                       <p className="text-zinc-400 leading-relaxed text-[11px]">
-                        Create a local file named <code className="text-[#10B981]">.env</code> inside the root directory, pasting your offline secret Gemini keys inside:
+                        This entire application runs 100% offline and key-free. You can specify a custom server port or default vault path in your <code className="text-[#0099FF]">.env</code>:
                       </p>
-                      <pre className="bg-zinc-950 p-1.5 rounded text-[9px] font-mono text-emerald-400 border border-zinc-850 select-all block mt-1 leading-normal">
-GEMINI_API_KEY=AIzaSy...
-PORT=3000</pre>
+                      <pre className="bg-zinc-950 p-1.5 rounded text-[9px] font-mono text-sky-400 border border-zinc-850 select-all block mt-1 leading-normal">
+PORT=3000
+# OBSIDIAN_VAULT_PATH=/Users/account/Vault</pre>
                     </div>
 
                     <div className="bg-[#09090B] p-3 rounded-lg border border-[#1C1C1F] space-y-1.5">
                       <div className="font-semibold text-white flex items-center gap-1.5">
                         <span className="bg-[#18181B] border border-zinc-805 h-4 w-4 rounded-full inline-flex items-center justify-center text-[10px]">4</span>
-                        Boot the Local Server
+                        Create Desktop Icon Launcher
                       </div>
                       <p className="text-zinc-400 leading-relaxed text-[10px]">
-                        Boot the offline development engine by entering:
-                        <code className="block select-all font-mono bg-zinc-950 text-emerald-400 p-1.5 mt-1 border border-zinc-850 rounded text-center">npm run dev</code>
-                        Point your browser to <code className="text-[#10B981]">http://localhost:3000</code> and configure your custom Obsidian path input there!
+                        To generate an automated, double-clickable launch icon directly on your Desktop, simply type:
+                        <code className="block select-all font-mono bg-zinc-950 text-sky-400 p-1.5 mt-1 border border-zinc-850 rounded text-center">node create-launcher.js</code>
+                        This automatically creates a desktop shortcut that boots the local server and opens your browser.
                       </p>
                     </div>
                   </div>
@@ -1127,12 +1113,12 @@ PORT=3000</pre>
                     <span className="font-semibold text-white uppercase tracking-wider text-[9px]">🖥️ SYSTEM BOOT INSTANT AUTO-STARTUP CHANNELS:</span>
                     <div className="flex gap-4">
                       <div>
-                        <span className="text-zinc-400">Windows Startup Shortcut:</span>{' '}
-                        <span className="text-zinc-500">Run <code className="bg-zinc-905 p-0.5 rounded">shell:startup</code>, create shortcut linking to <code className="text-zinc-400 font-mono">http://localhost:3000</code></span>
+                        <span className="text-zinc-400">Desktop Shortcut:</span>{' '}
+                        <span className="text-[#0099FF] font-semibold">Run <code className="bg-zinc-900 p-0.5 rounded text-white font-mono break-all">node create-launcher.js</code> to output Windows (.bat) or Mac (.command) launcher</span>
                       </div>
                       <div>
-                        <span className="text-zinc-400">macOS Login Items:</span>{' '}
-                        <span className="text-zinc-500">Drag browser link into General &gt; Login Items</span>
+                        <span className="text-zinc-400">Windows Startup:</span>{' '}
+                        <span className="text-[#A1A1AA]">Copy the desktop launcher file into your folder from running <code className="bg-zinc-905 p-0.5 rounded text-white font-mono">shell:startup</code></span>
                       </div>
                     </div>
                   </div>
@@ -1154,12 +1140,12 @@ PORT=3000</pre>
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95 }}
             className={`fixed top-16 right-4 z-50 px-3.5 py-2.5 rounded-lg border text-xs font-semibold flex items-center gap-2 shadow-2xl ${
-              showToast.type === 'success' ? 'bg-[#10B981]/10 text-white border-[#10B981]/30 shadow-[#10B981]/5' :
+              showToast.type === 'success' ? 'bg-[#0099FF]/10 text-white border-[#0099FF]/30 shadow-[#0099FF]/5' :
               showToast.type === 'error' ? 'bg-red-950/20 text-red-300 border-red-900/30' :
               'bg-[#121214] text-[#D4D4D8] border-[#27272A]'
             }`}
           >
-            {showToast.type === 'success' && <Check className="h-3 w-3 text-[#10B981]" />}
+            {showToast.type === 'success' && <Check className="h-3 w-3 text-[#0099FF]" />}
             {showToast.type === 'error' && <AlertCircle className="h-3.5 w-3.5 text-red-400" />}
             <span>{showToast.msg}</span>
           </motion.div>
@@ -1195,7 +1181,7 @@ PORT=3000</pre>
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
                     placeholder="Search titles & transcripts..."
-                    className="w-full bg-[#121214] border border-[#1C1C1F] text-xs py-2 pl-9 pr-3 rounded-lg placeholder-zinc-600 text-white focus:outline-hidden focus:ring-1 focus:ring-[#10B981] focus:border-[#10B981] transition-all"
+                    className="w-full bg-[#121214] border border-[#1C1C1F] text-xs py-2 pl-9 pr-3 rounded-lg placeholder-zinc-600 text-white focus:outline-hidden focus:ring-1 focus:ring-[#0099FF] focus:border-[#0099FF] transition-all"
                   />
                 </div>
               </div>
@@ -1218,12 +1204,12 @@ PORT=3000</pre>
                         onClick={() => selectNote(note)}
                         className={`p-3 rounded-lg cursor-pointer transition-all border ${
                           isSelected 
-                            ? 'bg-[#18181B] border-[#10B981]/50 shadow-md' 
+                            ? 'bg-[#18181B] border-[#0099FF]/50 shadow-md' 
                             : 'bg-transparent border-transparent hover:bg-[#121214] hover:border-[#1C1C1F]'
                         }`}
                       >
                         <div className="flex items-start justify-between gap-1.5">
-                          <h3 className={`text-xs font-bold truncate ${isSelected ? 'text-[#10B981]' : 'text-zinc-300'}`}>
+                          <h3 className={`text-xs font-bold truncate ${isSelected ? 'text-[#0099FF]' : 'text-zinc-300'}`}>
                             {note.title}
                           </h3>
                           <button
@@ -1284,7 +1270,7 @@ PORT=3000</pre>
             
             {/* Soft pulsing mic background when active */}
             {isRecording && (
-              <div className="absolute inset-0 bg-radial-gradient from-[#10B981]/5 to-transparent pointer-events-none animate-pulse" />
+              <div className="absolute inset-0 bg-radial-gradient from-[#0099FF]/5 to-transparent pointer-events-none animate-pulse" />
             )}
 
             <div className="w-full max-w-xl mx-auto flex flex-col items-center text-center space-y-4">
@@ -1296,7 +1282,7 @@ PORT=3000</pre>
                     <motion.div
                       key={idx}
                       animate={{ height: amp }}
-                      className="w-1 bg-[#10B981] rounded-t-xs shadow-[0_0_6px_rgba(16,185,129,0.3)]"
+                      className="w-1 bg-[#0099FF] rounded-t-xs shadow-[0_0_6px_rgba(0,153,255,0.3)]"
                       style={{ minHeight: '3px' }}
                     />
                   ))}
@@ -1306,7 +1292,7 @@ PORT=3000</pre>
               {/* Large central Tactile mic circles */}
               <div className="relative">
                 {isRecording && (
-                  <span className="absolute -inset-4 rounded-full bg-[#10B981]/10 animate-ping duration-1000" />
+                  <span className="absolute -inset-4 rounded-full bg-[#0099FF]/10 animate-ping duration-1000" />
                 )}
                 
                 <button
@@ -1317,7 +1303,7 @@ PORT=3000</pre>
                       ? 'bg-red-600 ring-4 ring-red-950/20 shadow-[0_0_20px_rgba(239,68,68,0.4)]' 
                       : isTranscribingAudio
                         ? 'bg-zinc-800 text-zinc-500 cursor-not-allowed border border-zinc-700'
-                        : 'bg-[#10B981] hover:brightness-110 shadow-[0_0_20px_rgba(16,185,129,0.2)] text-black font-semibold'
+                        : 'bg-[#0099FF] hover:brightness-110 shadow-[0_0_20px_rgba(0,153,255,0.2)] text-black font-semibold'
                   }`}
                   id="central-mic-trigger"
                   title={isRecording ? "Stop voice recording" : "Hold or click to dictate note"}
@@ -1340,44 +1326,16 @@ PORT=3000</pre>
                       ? 'Decoding speech memo...'
                       : 'Hold or click to record mic'}
                 </h2>
-                <p className="text-[10px] text-zinc-500 mt-0.5 max-w-xs mx-auto">
-                  {isRecording 
-                    ? 'Speak cleanly. When done record stops, we ask for note title.' 
-                    : 'Your voice is converted straight to clean markdown documents.'}
-                </p>
-              </div>
-
-              {/* Mode Settings selector panel */}
-              <div className="flex items-center gap-1.5" id="dictation-mode-toggle">
-                <button
-                  type="button"
-                  disabled={isRecording}
-                  onClick={() => setRecordingMode('realtime')}
-                  className={`px-3 py-1 rounded text-[9px] uppercase font-bold tracking-wider transition-all border ${
-                    recordingMode === 'realtime' 
-                      ? 'bg-zinc-900 border-[#10B981]/50 text-[#10B981]' 
-                      : 'bg-transparent border-zinc-800 text-zinc-500 hover:text-[#999]'
-                  }`}
-                >
-                  🎧 Continuous Realtime
-                </button>
-                <button
-                  type="button"
-                  disabled={isRecording}
-                  onClick={() => setRecordingMode('ai')}
-                  className={`px-3 py-1 rounded text-[9px] uppercase font-bold tracking-wider transition-all border ${
-                    recordingMode === 'ai' 
-                      ? 'bg-zinc-900 border-[#10B981]/50 text-[#10B981]' 
-                      : 'bg-transparent border-zinc-800 text-zinc-500 hover:text-[#999]'
-                  }`}
-                >
-                  ✨ Multimodal AI (High fidelity)
-                </button>
+                {isRecording && (
+                  <p className="text-[10px] text-zinc-500 mt-0.5 max-w-xs mx-auto">
+                    Speak cleanly. When done record stops, we ask for note title.
+                  </p>
+                )}
               </div>
 
               {/* Speaking interim transcript block */}
               {interimTranscript && (
-                <div className="bg-zinc-900/50 p-2 text-[11px] border border-dashed border-zinc-850 text-emerald-400 italic rounded-lg w-max shrink-0 shadow-xs max-w-xl truncate">
+                <div className="bg-zinc-900/50 p-2 text-[11px] border border-dashed border-zinc-850 text-sky-450 text-sky-400 italic rounded-lg w-max shrink-0 shadow-xs max-w-xl truncate">
                   &ldquo;{interimTranscript}&rdquo;
                 </div>
               )}
@@ -1397,7 +1355,7 @@ PORT=3000</pre>
                       value={noteTitle}
                       onChange={(e) => setNoteTitle(e.target.value)}
                       placeholder="Title of note..."
-                      className="w-full text-sm font-bold text-white bg-transparent border-b border-transparent hover:border-zinc-800 focus:border-[#10B981] focus:outline-hidden py-0.5 text-ellipsis overflow-hidden caret-[#10B981]"
+                      className="w-full text-sm font-bold text-white bg-transparent border-b border-transparent hover:border-zinc-800 focus:border-[#0099FF] focus:outline-hidden py-0.5 text-ellipsis overflow-hidden caret-[#0099FF]"
                     />
                   </div>
 
@@ -1408,7 +1366,7 @@ PORT=3000</pre>
                         onClick={() => setIsEditorMode(false)}
                         className={`px-3 py-1 rounded text-[10px] font-semibold transition-all ${
                           !isEditorMode 
-                            ? 'bg-[#18181B] text-[#10B981] shadow-xs' 
+                            ? 'bg-[#18181B] text-[#0099FF] shadow-xs' 
                             : 'text-zinc-500 hover:text-zinc-300'
                         }`}
                       >
@@ -1419,7 +1377,7 @@ PORT=3000</pre>
                         onClick={() => setIsEditorMode(true)}
                         className={`px-3 py-1 rounded text-[10px] font-semibold transition-all ${
                           isEditorMode 
-                            ? 'bg-[#18181B] text-[#10B981] shadow-xs' 
+                            ? 'bg-[#18181B] text-[#0099FF] shadow-xs' 
                             : 'text-zinc-500 hover:text-zinc-300'
                         }`}
                       >
@@ -1434,7 +1392,7 @@ PORT=3000</pre>
                     <button
                       onClick={() => saveNoteToServer()}
                       disabled={isSaving}
-                      className="bg-[#10B981] hover:brightness-110 text-neutral-900 font-bold text-[11px] px-3.5 py-1.5 rounded-lg shadow-sm transition-all flex items-center gap-1 cursor-pointer disabled:opacity-50 shrink-0"
+                      className="bg-[#0099FF] hover:brightness-110 text-neutral-900 font-bold text-[11px] px-3.5 py-1.5 rounded-lg shadow-sm transition-all flex items-center gap-1 cursor-pointer disabled:opacity-50 shrink-0"
                     >
                       {isSaving ? <RefreshCw className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
                       <span>Sync</span>
@@ -1442,55 +1400,54 @@ PORT=3000</pre>
                   </div>
                 </div>
 
-                {/* Gemini and Free rules refinement tool dock */}
+                {/* Free offline local refinement tool dock */}
                 <div className="bg-[#121214] border-b border-[#1C1C1F] py-2.5 px-6 flex flex-wrap items-center gap-2" id="format-refinement-row">
-                  <span className="text-[9px] uppercase font-bold tracking-wider text-[#10B981] font-mono flex items-center gap-1 shrink-0 mr-1.5 animate-pulse">
-                    <Sparkles className="h-3 w-3" />
-                    Clean & Format:
+                  <span className="text-[9px] uppercase font-bold tracking-wider text-[#0099FF] font-mono flex items-center gap-1 shrink-0 mr-1 animate-pulse" title="Offline format transformations">
+                    <Sparkles className="h-3.5 w-3.5" />
                   </span>
                   
                   <button
                     type="button"
                     disabled={isRefining || !noteText}
                     onClick={() => applyAIRefinement('raw')}
-                    className="px-2.5 py-1 rounded bg-zinc-900 hover:bg-zinc-850 hover:border-[#10B981]/30 text-[10px] text-zinc-300 border border-zinc-800 transition-all cursor-pointer disabled:opacity-30"
+                    className="px-2.5 py-1 rounded bg-zinc-900 hover:bg-zinc-850 hover:border-[#0099FF]/30 text-[10px] text-zinc-300 border border-zinc-800 transition-all cursor-pointer disabled:opacity-30"
                     title="Removes um/ah filler words, stutters, and fixes punctuation instantly"
                   >
-                    🧹 Polish Punctuation (Free/Offline)
+                    🧹 Clean Grammar
                   </button>
 
                   <button
                     type="button"
                     disabled={isRefining || !noteText}
                     onClick={() => applyAIRefinement('bullet_points')}
-                    className="px-2.5 py-1 rounded bg-zinc-900 hover:bg-zinc-850 hover:border-[#10B981]/30 text-[10px] text-zinc-300 border border-zinc-800 transition-all cursor-pointer disabled:opacity-30"
-                    title="Ask Gemini to sort spoken notes into clean lists"
+                    className="px-2.5 py-1 rounded bg-zinc-900 hover:bg-zinc-850 hover:border-[#0099FF]/30 text-[10px] text-zinc-300 border border-zinc-800 transition-all cursor-pointer disabled:opacity-30"
+                    title="Instantly group thoughts of raw record into bullet lists"
                   >
-                    📝 Bullet Points (Gemini)
+                    📝 Bullet Points
                   </button>
 
                   <button
                     type="button"
                     disabled={isRefining || !noteText}
                     onClick={() => applyAIRefinement('checklist')}
-                    className="px-2.5 py-1 rounded bg-zinc-900 hover:bg-zinc-850 hover:border-[#10B981]/30 text-[10px] text-zinc-300 border border-zinc-800 transition-all cursor-pointer disabled:opacity-30"
-                    title="Build checklist todo spreadsheet squares"
+                    className="px-2.5 py-1 rounded bg-zinc-900 hover:bg-zinc-850 hover:border-[#0099FF]/30 text-[10px] text-zinc-300 border border-zinc-800 transition-all cursor-pointer disabled:opacity-30"
+                    title="Build checklist todo items"
                   >
-                    ✅ checklist (Gemini)
+                    ✅ Checklist
                   </button>
 
                   <button
                     type="button"
                     disabled={isRefining || !noteText}
                     onClick={() => applyAIRefinement('meeting_minutes')}
-                    className="px-2.5 py-1 rounded bg-zinc-900 hover:bg-zinc-850 hover:border-[#10B981]/30 text-[10px] text-zinc-300 border border-zinc-800 transition-all cursor-pointer disabled:opacity-30"
-                    title="Draft agenda and tasks ownership"
+                    className="px-2.5 py-1 rounded bg-zinc-900 hover:bg-zinc-850 hover:border-[#0099FF]/30 text-[10px] text-zinc-300 border border-zinc-800 transition-all cursor-pointer disabled:opacity-30"
+                    title="Draft agenda highlights and task items"
                   >
-                    💼 Minutes (Gemini)
+                    💼 Minutes
                   </button>
 
                   {isRefining && (
-                    <div className="flex items-center gap-1 ml-auto text-[10px] text-[#10B981] font-mono font-medium">
+                    <div className="flex items-center gap-1 ml-auto text-[10px] text-[#0099FF] font-mono font-medium">
                       <RefreshCw className="h-2.5 w-2.5 animate-spin mr-1" />
                       <span>Formulating...</span>
                     </div>
@@ -1520,7 +1477,7 @@ PORT=3000</pre>
                       value={noteText}
                       onChange={(e) => setNoteText(e.target.value)}
                       placeholder="Start drafting notes or speak clearly with the central audio trigger..."
-                      className="w-full flex-1 bg-[#121214] border border-[#1C1C1F] p-5 rounded-xl text-neutral-200 font-mono text-xs focus:outline-hidden focus:ring-1 focus:ring-[#10B981] focus:border-[#10B981] leading-relaxed outline-hidden resize-none select-all caret-[#10B981]"
+                      className="w-full flex-1 bg-[#121214] border border-[#1C1C1F] p-5 rounded-xl text-neutral-200 font-mono text-xs focus:outline-hidden focus:ring-1 focus:ring-[#0099FF] focus:border-[#0099FF] leading-relaxed outline-hidden resize-none select-all caret-[#0099FF]"
                       id="active-text-sheet-box"
                     />
                   )}
@@ -1540,7 +1497,7 @@ PORT=3000</pre>
                        className="p-1 px-2.5 rounded font-bold text-[#A1A1AA] hover:text-white text-[10px] hover:bg-zinc-900 transition-colors flex items-center gap-1 cursor-pointer"
                        title="Copy markdown text"
                      >
-                       <Copy className="h-3.5 w-3.5 text-[#10B981]" />
+                       <Copy className="h-3.5 w-3.5 text-[#0099FF]" />
                        <span>Copy</span>
                      </button>
                      <button
@@ -1548,7 +1505,7 @@ PORT=3000</pre>
                        className="p-1 px-2.5 rounded font-bold text-[#A1A1AA] hover:text-white text-[10px] hover:bg-zinc-900 transition-colors flex items-center gap-1 cursor-pointer"
                        title="Download as physical backup note"
                      >
-                       <Download className="h-3.5 w-3.5 text-[#10B981]" />
+                       <Download className="h-3.5 w-3.5 text-[#0099FF]" />
                        <span>Download</span>
                      </button>
                    </div>
@@ -1556,34 +1513,25 @@ PORT=3000</pre>
 
               </div>
             ) : (
-              <div className="flex-1 flex flex-col items-center justify-center p-8 text-center text-zinc-600" id="blank-editor-main-state">
-                <div className="bg-[#121214] border border-[#1C1C1F] p-4 rounded-full mb-3 shrink-0">
-                  <Mic className="h-8 w-8 text-[#10B981]/50 shadow-md" />
-                </div>
-                <h3 className="text-zinc-400 font-bold text-xs uppercase tracking-widest">No Active Note Selected</h3>
-                <p className="text-[11px] max-w-sm mt-1 mb-4 leading-relaxed text-zinc-600">
-                  Select a document from your sliding library, or hit the central record button to capture fresh transcripts.
-                </p>
-                <div className="flex items-center gap-2">
-                  <button 
-                    onClick={() => {
-                        setNoteTitle(`Voice Note - ${new Date().toLocaleDateString()}`);
-                        setNoteText('');
-                        setSelectedNote({
-                          filename: `note_${Date.now()}.md`,
-                          title: `Local Drafting Sheet`,
-                          content: '',
-                          createdAt: new Date().toISOString(),
-                          transcriptionType: 'realtime'
-                        });
-                        setIsEditorMode(true);
-                    }}
-                    className="flex items-center gap-1 py-1.5 px-3.5 bg-zinc-900 hover:bg-zinc-850 hover:text-white border border-zinc-800 transition-all rounded-lg text-xs font-semibold text-zinc-400 cursor-pointer"
-                  >
-                    <Plus className="h-3 w-3 text-[#10B981]" />
-                    <span>Open Empty Draft</span>
-                  </button>
-                </div>
+              <div className="flex-1 flex flex-col items-center justify-center p-8 text-center text-zinc-600 h-full" id="blank-editor-main-state">
+                <button 
+                  onClick={() => {
+                      setNoteTitle('Drafting Sheet');
+                      setNoteText('');
+                      setSelectedNote({
+                        filename: `note_draft_${Date.now()}.md`,
+                        title: 'Drafting Sheet',
+                        content: '',
+                        createdAt: new Date().toISOString(),
+                        transcriptionType: 'realtime'
+                      });
+                      setIsEditorMode(true);
+                  }}
+                  className="flex items-center gap-2.5 py-3.5 px-6 bg-[#18181B] hover:bg-[#27272A] hover:text-white md:border border-zinc-800 transition-all rounded-xl text-xs font-bold text-zinc-400 cursor-pointer shadow-lg hover:shadow-cyan-500/5 hover:border-cyan-500/20"
+                >
+                  <Plus className="h-4.5 w-4.5 text-[#0099FF]" />
+                  <span>Open Empty Draft</span>
+                </button>
               </div>
             )}
           </div>
@@ -1603,7 +1551,7 @@ PORT=3000</pre>
               className="bg-[#121214] border border-[#27272A] w-full max-w-md p-6 rounded-2xl shadow-2xl space-y-4"
               id="title-prompt-dialog"
             >
-              <div className="flex items-center gap-2 text-[#10B981]">
+              <div className="flex items-center gap-2 text-[#0099FF]">
                 <Award className="h-5 w-5 animate-bounce" />
                 <h2 className="text-sm font-bold uppercase tracking-wider text-white">Name Your Dictation</h2>
               </div>
@@ -1618,7 +1566,7 @@ PORT=3000</pre>
                   value={suggestedTitle}
                   onChange={(e) => setSuggestedTitle(e.target.value)}
                   placeholder="e.g. Project brainstorm note"
-                  className="w-full bg-[#09090B] border border-[#27272A] text-white text-xs px-3.5 py-2.5 rounded-lg focus:outline-hidden focus:ring-1 focus:ring-[#10B981] focus:border-[#10B981]"
+                  className="w-full bg-[#09090B] border border-[#27272A] text-white text-xs px-3.5 py-2.5 rounded-lg focus:outline-hidden focus:ring-1 focus:ring-[#0099FF] focus:border-[#0099FF]"
                   autoFocus
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') {
@@ -1641,7 +1589,7 @@ PORT=3000</pre>
                     // Save as untitled anyway
                     handleSubmitTitleModal(suggestedTitle || `Voice Note - ${new Date().toLocaleDateString()}`);
                   }}
-                  className="flex-1 bg-[#10B981] hover:brightness-110 text-neutral-900 font-bold text-xs py-2.5 rounded-lg transition-all cursor-pointer text-center"
+                  className="flex-1 bg-[#0099FF] hover:brightness-110 text-neutral-900 font-bold text-xs py-2.5 rounded-lg transition-all cursor-pointer text-center"
                 >
                   Save & Sync File
                 </button>

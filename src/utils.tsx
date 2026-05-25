@@ -348,3 +348,97 @@ export function localPolishGrammar(text: string): string {
 
   return refined;
 }
+
+/**
+ * Local offline markdown note formatter. Replaces advanced cloud AI refiner with immediate
+ * high-fidelity layout processors, delivering instant offline structure completely without API costs.
+ */
+export function localAIRefine(
+  text: string, 
+  noteType: "bullet_points" | "checklist" | "meeting_minutes" | "journal" | "raw"
+): string {
+  const cleanText = localPolishGrammar(text);
+  
+  if (noteType === "raw") {
+    return cleanText;
+  }
+  
+  if (noteType === "bullet_points") {
+    // Split sentences and convert into elegant bullet lists
+    const sentences = cleanText.split(/(?<=[.?!])\s+/);
+    const bullets = sentences
+      .map((s) => s.trim())
+      .filter((s) => s.length > 2)
+      .map((s) => `- ${s}`)
+      .join("\n");
+    return `### Key Takeaways\n\n${bullets || "- " + cleanText}`;
+  }
+  
+  if (noteType === "checklist") {
+    // Converted to interactive checklist checkboxes
+    const sentences = cleanText.split(/(?<=[.?!])\s+/);
+    const checkboxes = sentences
+      .map((s) => s.trim())
+      .filter((s) => s.length > 2)
+      .map((s) => `- [ ] ${s}`)
+      .join("\n");
+    return `### Action Checklist\n\n${checkboxes || "- [ ] " + cleanText}`;
+  }
+  
+  if (noteType === "meeting_minutes") {
+    // Structured agenda sections
+    const sentences = cleanText.split(/(?<=[.?!])\s+/);
+    const midPoint = Math.ceil(sentences.length / 2);
+    const discussionPoints = sentences.slice(0, midPoint);
+    const decisions = sentences.slice(midPoint);
+
+    const bulletsDiscussion = discussionPoints
+      .map((s) => s.trim())
+      .filter((s) => s.length > 2)
+      .map((s) => `- **Highlight**: ${s}`)
+      .join("\n");
+
+    const bulletsDecisions = decisions
+      .map((s) => s.trim())
+      .filter((s) => s.length > 2)
+      .map((s) => `- [ ] ${s}`)
+      .join("\n");
+
+    return `### Meeting Minutes
+    
+**Date**: ${new Date().toLocaleDateString()}
+**Objective**: Recording briefing session
+
+#### Discussion Highlights
+${bulletsDiscussion || "- No discussion notes captured."}
+
+#### Decided Tasks & Next Steps
+${bulletsDecisions || "- No action items defined."}
+`;
+  }
+  
+  if (noteType === "journal") {
+    // Beautiful blockquoted personal journal page
+    const sentences = cleanText.split(/(?<=[.?!])\s+/);
+    if (sentences.length <= 1) {
+      return `### Reflection Journal
+      
+*Recorded on ${new Date().toLocaleDateString()}*
+
+> "${cleanText}"
+`;
+    }
+    const quote = sentences[0].trim();
+    const reflections = sentences.slice(1).map(s => s.trim()).join(" ");
+    return `### Reflection Journal
+
+*Recorded on ${new Date().toLocaleDateString()}*
+
+> "${quote}"
+
+${reflections}
+`;
+  }
+  
+  return cleanText;
+}
