@@ -1,0 +1,6 @@
+{
+  "name": "Voice to Markdown Notes",
+  "description": "Transcribe speech to styled Markdown notes in real-time or via AI recording, save notes, search them, and get desktop notifications.",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
