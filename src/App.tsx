@@ -982,7 +982,7 @@ ${noteText}`;
           </div>
           <div>
             <h1 className="text-sm font-bold tracking-widest uppercase flex items-center">
-              <span className="text-[#0099FF]">Echo</span><span className="text-white">Scribe</span>
+              <span className="text-white"><span className="text-[#0099FF]">ECHO</span>SCRIBE</span>
             </h1>
           </div>
         </div>
@@ -1489,13 +1489,13 @@ ${noteText}`;
                 <div className="bg-[#121214] border-b border-[#1C1C1F] py-2 px-6 flex items-center justify-between gap-4" id="format-refinement-row">
                   <div className="flex flex-wrap items-center gap-2">
                     {/* Read & Edit Markdown tabs - icon only with tooltips */}
-                    <div className="bg-zinc-900 border border-zinc-800 p-0.5 rounded-lg flex items-center shrink-0 mr-1.5">
+                    <div className="bg-zinc-900 border border-zinc-800 p-0.5 rounded-lg flex items-center shrink-0 mr-1.5 animate-fade-in">
                       <button
                         onClick={() => setIsEditorMode(false)}
                         className={`p-1.5 rounded transition-all cursor-pointer ${
                           !isEditorMode 
                             ? 'bg-[#18181B] text-[#0099FF]' 
-                            : 'text-zinc-550 text-zinc-500 hover:text-zinc-300'
+                            : 'text-zinc-500 hover:text-zinc-350'
                         }`}
                         title="Read Note Preview"
                       >
@@ -1506,7 +1506,7 @@ ${noteText}`;
                         className={`p-1.5 rounded transition-all cursor-pointer ${
                           isEditorMode 
                             ? 'bg-[#18181B] text-[#0099FF]' 
-                            : 'text-zinc-550 text-zinc-500 hover:text-zinc-300'
+                            : 'text-zinc-500 hover:text-zinc-350'
                         }`}
                         title="Edit Markdown Content"
                       >
@@ -1518,10 +1518,10 @@ ${noteText}`;
                       type="button"
                       disabled={isRefining || !noteText}
                       onClick={() => applyAIRefinement('raw')}
-                      className="px-2.5 py-1.5 rounded bg-zinc-900 hover:bg-zinc-850 hover:border-[#0099FF]/30 text-[10px] text-zinc-300 border border-zinc-800 transition-colors cursor-pointer disabled:opacity-30 inline-flex items-center gap-1.5"
+                      className="px-2.5 py-1.5 rounded bg-zinc-900 hover:bg-zinc-850 hover:text-[#0099FF] hover:border-[#0099FF]/30 text-[10px] text-zinc-300 border border-zinc-800 transition-colors cursor-pointer disabled:opacity-30 inline-flex items-center gap-1.5"
                       title="Removes um/ah filler words, stutters, and fixes punctuation instantly"
                     >
-                      <Sparkles className="h-4 w-4 text-zinc-400" />
+                      <Sparkles className="h-4 w-4" />
                       <span>Clean Grammar</span>
                     </button>
 
@@ -1529,10 +1529,10 @@ ${noteText}`;
                       type="button"
                       disabled={isRefining || !noteText}
                       onClick={() => applyAIRefinement('bullet_points')}
-                      className="px-2.5 py-1.5 rounded bg-zinc-900 hover:bg-zinc-850 hover:border-[#0099FF]/30 text-[10px] text-zinc-300 border border-zinc-800 transition-colors cursor-pointer disabled:opacity-30 inline-flex items-center gap-1.5"
+                      className="px-2.5 py-1.5 rounded bg-zinc-900 hover:bg-zinc-850 hover:text-[#0099FF] hover:border-[#0099FF]/30 text-[10px] text-zinc-300 border border-zinc-800 transition-colors cursor-pointer disabled:opacity-30 inline-flex items-center gap-1.5"
                       title="Instantly group thoughts of raw record into bullet lists"
                     >
-                      <List className="h-4 w-4 text-zinc-400" />
+                      <List className="h-4 w-4" />
                       <span>Bullet Points</span>
                     </button>
 
@@ -1540,10 +1540,10 @@ ${noteText}`;
                       type="button"
                       disabled={isRefining || !noteText}
                       onClick={() => applyAIRefinement('checklist')}
-                      className="px-2.5 py-1.5 rounded bg-zinc-900 hover:bg-zinc-850 hover:border-[#0099FF]/30 text-[10px] text-zinc-300 border border-zinc-800 transition-colors cursor-pointer disabled:opacity-30 inline-flex items-center gap-1.5"
+                      className="px-2.5 py-1.5 rounded bg-zinc-900 hover:bg-zinc-850 hover:text-[#0099FF] hover:border-[#0099FF]/30 text-[10px] text-zinc-300 border border-zinc-800 transition-colors cursor-pointer disabled:opacity-30 inline-flex items-center gap-1.5"
                       title="Build checklist todo items"
                     >
-                      <CheckSquare className="h-4 w-4 text-zinc-400" />
+                      <CheckSquare className="h-4 w-4" />
                       <span>Checklist</span>
                     </button>
 
@@ -1551,10 +1551,10 @@ ${noteText}`;
                       type="button"
                       disabled={isRefining || !noteText}
                       onClick={() => applyAIRefinement('meeting_minutes')}
-                      className="px-2.5 py-1.5 rounded bg-zinc-900 hover:bg-zinc-850 hover:border-[#0099FF]/30 text-[10px] text-zinc-300 border border-zinc-800 transition-colors cursor-pointer disabled:opacity-30 inline-flex items-center gap-1.5"
+                      className="px-2.5 py-1.5 rounded bg-zinc-900 hover:bg-zinc-850 hover:text-[#0099FF] hover:border-[#0099FF]/30 text-[10px] text-zinc-300 border border-zinc-800 transition-colors cursor-pointer disabled:opacity-30 inline-flex items-center gap-1.5"
                       title="Draft agenda highlights and task items"
                     >
-                      <FileText className="h-4 w-4 text-zinc-400" />
+                      <FileText className="h-4 w-4" />
                       <span>Minutes</span>
                     </button>
 
