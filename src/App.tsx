@@ -39,7 +39,12 @@ import {
   ChevronRight,
   LogOut,
   FolderOpen,
-  Award
+  Award,
+  Play,
+  Pause,
+  Square,
+  List,
+  CheckSquare
 } from 'lucide-react';
 import { Note } from './types.ts';
 import { 
@@ -76,7 +81,7 @@ export default function App() {
   const [notes, setNotes] = useState<Note[]>([]);
   const [selectedNote, setSelectedNote] = useState<Note | null>(() => ({
     filename: `note_draft_${Date.now()}.md`,
-    title: 'Drafting Sheet',
+    title: 'Untitled Note',
     content: '',
     createdAt: new Date().toISOString(),
     transcriptionType: 'realtime'
@@ -94,7 +99,7 @@ export default function App() {
   const [googleSyncing, setGoogleSyncing] = useState(false);
 
   // Active inputs
-  const [noteTitle, setNoteTitle] = useState('Drafting Sheet');
+  const [noteTitle, setNoteTitle] = useState('Untitled Note');
   const [noteText, setNoteText] = useState('');
   const [currentTranscriptionType, setCurrentTranscriptionType] = useState<'realtime' | 'ai'>('realtime');
 
@@ -105,8 +110,24 @@ export default function App() {
   const [tempTranscriptionType, setTempTranscriptionType] = useState<'realtime' | 'ai'>('realtime');
   const [suggestedTitle, setSuggestedTitle] = useState('');
 
-  // Recording processes
-  const [isRecording, setIsRecording] = useState(false);
+  // Recording processes and controls with active synchronization references
+  const [isRecording, _setIsRecording] = useState(false);
+  const isRecordingRef = useRef(false);
+  const setIsRecording = (val: boolean) => {
+    _setIsRecording(val);
+    isRecordingRef.current = val;
+  };
+
+  const [isPaused, _setIsPaused] = useState(false);
+  const isPausedRef = useRef(false);
+  const setIsPaused = (val: boolean) => {
+    _setIsPaused(val);
+    isPausedRef.current = val;
+  };
+
+  const stopRequestedRef = useRef(false);
+  const initialNoteTextRef = useRef('');
+
   const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [recordingMode, setRecordingMode] = useState<'realtime' | 'ai'>('realtime');
   const [interimTranscript, setInterimTranscript] = useState('');
@@ -465,12 +486,12 @@ export default function App() {
         if (selectedNote?.filename === filename) {
           setSelectedNote({
             filename: `note_draft_${Date.now()}.md`,
-            title: 'Drafting Sheet',
+            title: 'Untitled Note',
             content: '',
             createdAt: new Date().toISOString(),
             transcriptionType: 'realtime'
           });
-          setNoteTitle('Drafting Sheet');
+          setNoteTitle('Untitled Note');
           setNoteText('');
           setIsEditorMode(true);
         }
@@ -541,19 +562,55 @@ ${noteText}`;
   // Waveform effect loop
   const simulateWaveforms = () => {
     waveformIntervalRef.current = setInterval(() => {
-      setAudioWaveform(prev => {
-        const next = [...prev];
-        if (next.length > 25) next.shift();
-        next.push(Math.floor(Math.random() * 85) + 10);
-        return next;
-      });
+      if (!isPausedRef.current) {
+        setAudioWaveform(prev => {
+          const next = [...prev];
+          if (next.length > 25) next.shift();
+          next.push(Math.floor(Math.random() * 85) + 10);
+          return next;
+        });
+      }
     }, 110);
   };
 
-  // --- RECORDING WORKFLOWS ---
+  // --- RECORDING WORKFLOWS & PAUSE CONTROLS ---
+  const handlePauseToggle = () => {
+    if (!isRecordingRef.current) return;
+    if (isPausedRef.current) {
+      // Resume
+      setIsPaused(false);
+      triggerToast("Recording resumed", "success");
+      if (recordingMode === 'realtime' && recognitionRef.current) {
+        try {
+          recognitionRef.current.start();
+        } catch (e) {
+          console.error("Failed to restart speech recognition:", e);
+        }
+      }
+    } else {
+      // Pause
+      setIsPaused(true);
+      triggerToast("Recording paused", "info");
+      if (recordingMode === 'realtime' && recognitionRef.current) {
+        try {
+          // Temporarily stop recognition engine (onend won't auto-reset because isPausedRef is true)
+          recognitionRef.current.stop();
+        } catch (e) {
+          console.error("Failed to pause speech recognition:", e);
+        }
+      }
+    }
+  };
+
+  const handleStopAction = () => {
+    if (!isRecordingRef.current) return;
+    stopRequestedRef.current = true;
+    stopRecordingAction();
+  };
+
   const startRecordingAction = async () => {
     if (isRecording) {
-      stopRecordingAction();
+      handleStopAction();
       return;
     }
 
@@ -564,15 +621,22 @@ ${noteText}`;
       return;
     }
 
+    // Capture the starting text content of our current active note to append onto
+    initialNoteTextRef.current = noteText;
+    stopRequestedRef.current = false;
+
     // Set record states
     setRecordingSeconds(0);
     setAudioWaveform(Array(18).fill(8));
     setIsRecording(true);
+    setIsPaused(false);
     setInterimTranscript('');
 
     // Start timer counter
     timerIntervalRef.current = setInterval(() => {
-      setRecordingSeconds(prev => prev + 1);
+      if (!isPausedRef.current) {
+        setRecordingSeconds(prev => prev + 1);
+      }
     }, 1000);
 
     simulateWaveforms();
@@ -585,8 +649,9 @@ ${noteText}`;
   };
 
   const stopRecordingAction = () => {
-    if (!isRecording) return;
+    if (!isRecordingRef.current) return;
     setIsRecording(false);
+    setIsPaused(false);
 
     if (timerIntervalRef.current) {
       clearInterval(timerIntervalRef.current);
@@ -613,7 +678,7 @@ ${noteText}`;
       }
     }
 
-    triggerToast("Recording completed", "info");
+    triggerToast("Recording ended", "info");
   };
 
   // Standard WebSpeech API
@@ -655,10 +720,17 @@ ${noteText}`;
       if (finalized) {
         recognizedText = recognizedText ? recognizedText + ' ' + finalized : finalized;
       }
+
+      // Stream text live directly to active Note Container Drafting sheet!
+      const currentDraftText = initialNoteTextRef.current
+        ? initialNoteTextRef.current + (initialNoteTextRef.current.endsWith('\n') ? '' : '\n') + recognizedText + (interim ? ' ' + interim : '')
+        : recognizedText + (interim ? ' ' + interim : '');
+
+      setNoteText(currentDraftText);
     };
 
     rec.onerror = (err: any) => {
-      console.error(err);
+      console.error("Speech API Error:", err);
       if (err.error !== 'no-speech') {
         triggerToast(`Dictation issue: ${err.error}`, "error");
         stopRecordingAction();
@@ -668,19 +740,43 @@ ${noteText}`;
     rec.onend = () => {
       setInterimTranscript('');
       
-      // Immediately request details & title
-      if (recognizedText.trim().length > 0) {
-        // Prepare title modal
-        const dateStr = new Date().toLocaleDateString();
-        setSuggestedTitle(`Realtime Note - ${dateStr}`);
-        setTempNoteText(recognizedText.trim());
-        setTempDuration(recordingSeconds);
-        setTempTranscriptionType('realtime');
+      // Auto-restart of continuous Speech Recognition to keep recording robust and avoid silence ending!
+      if (isRecordingRef.current && !isPausedRef.current && !stopRequestedRef.current) {
+        try {
+          rec.start();
+          return;
+        } catch (e) {
+          console.warn("Speech recognition auto-start error, delaying...", e);
+          setTimeout(() => {
+            if (isRecordingRef.current && !isPausedRef.current && !stopRequestedRef.current) {
+              try { rec.start(); } catch {}
+            }
+          }, 300);
+          return;
+        }
+      }
+
+      if (stopRequestedRef.current) {
+        stopRequestedRef.current = false;
         
-        // Open the naming modal!
-        setShowTitleModal(true);
-      } else {
-        triggerToast("No vocal transcription captured.", "info");
+        if (recognizedText.trim().length > 0) {
+          // Decide whether we prompt for title confirmation modal
+          const isNoteUntitled = selectedNote?.title === 'Untitled Note' || selectedNote?.title === 'Drafting Sheet';
+          if (isNoteUntitled) {
+            const dateStr = new Date().toLocaleDateString();
+            setSuggestedTitle(`Realtime Note - ${dateStr}`);
+            setTempNoteText(recognizedText.trim());
+            setTempDuration(recordingSeconds);
+            setTempTranscriptionType('realtime');
+            setShowTitleModal(true);
+          } else {
+            // Save the updated content directly to server!
+            saveNoteToServer();
+            triggerToast("Dictation synced to active note!", "success");
+          }
+        } else {
+          triggerToast("No vocal transcription captured.", "info");
+        }
       }
     };
 
@@ -752,18 +848,27 @@ ${noteText}`;
         if (res.ok) {
           const data = await res.json();
           
-          // Pre-fill fields but trigger manual Title Confirmation Modal!
           const generatedText = data.transcription || "";
-          const headerSuggestion = data.title || `AI Note - ${new Date().toLocaleDateString()}`;
+          if (generatedText) {
+            const combinedText = noteText 
+              ? noteText + "\n\n" + generatedText 
+              : generatedText;
+            setNoteText(combinedText);
 
-          setTempNoteText(generatedText);
-          setSuggestedTitle(headerSuggestion);
-          setTempDuration(recordingSeconds);
-          setTempTranscriptionType('ai');
-
-          // Launch modal!
-          setShowTitleModal(true);
-          triggerToast("Transcription parsed! Choose a title.", "success");
+            const isNoteUntitled = selectedNote?.title === 'Untitled Note' || selectedNote?.title === 'Drafting Sheet';
+            if (isNoteUntitled) {
+              const headerSuggestion = data.title || `AI Note - ${new Date().toLocaleDateString()}`;
+              setTempNoteText(generatedText);
+              setSuggestedTitle(headerSuggestion);
+              setTempDuration(recordingSeconds);
+              setTempTranscriptionType('ai');
+              setShowTitleModal(true);
+              triggerToast("Transcription parsed! Choose a title.", "success");
+            } else {
+              await saveNoteToServer(combinedText);
+              triggerToast("AI transcription appended to active note!", "success");
+            }
+          }
         } else {
           const errData = await res.json();
           triggerToast(errData.error || "Multimodal error", "error");
@@ -870,18 +975,14 @@ ${noteText}`;
       {/* Top Header/Status bar */}
       <header className="bg-[#09090B] border-b border-[#1C1C1F] py-4 px-6 sticky top-0 z-30 flex items-center justify-between" id="primary-app-header">
         <div className="flex items-center gap-3">
-          <div className="h-7 w-7 rounded-md overflow-hidden flex items-center justify-center border border-zinc-900 bg-[#121214] shrink-0">
-            <img 
-              src="/src/assets/images/echoscribe_logo_1779738531657.png" 
-              alt="EchoScribe Logo" 
-              className="h-full w-full object-cover" 
-              referrerPolicy="no-referrer" 
-            />
+          <div className="h-8 w-8 flex items-center justify-center bg-transparent shrink-0">
+            <div className="bg-[#0099FF]/10 text-[#0099FF] p-1.5 rounded-lg flex items-center justify-center">
+              <Mic className="h-4.5 w-4.5" />
+            </div>
           </div>
           <div>
-            <h1 className="text-sm font-bold text-white tracking-widest uppercase flex items-center gap-2">
-              EchoScribe
-              <span className="h-1.5 w-1.5 rounded-full bg-[#0099FF] animate-pulse"></span>
+            <h1 className="text-sm font-bold tracking-widest uppercase flex items-center">
+              <span className="text-[#0099FF]">Echo</span><span className="text-white">Scribe</span>
             </h1>
           </div>
         </div>
@@ -906,15 +1007,14 @@ ${noteText}`;
           {/* Library Folder icon toggle for clean browsing list */}
           <button
             onClick={() => setShowLibrary(!showLibrary)}
-            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold cursor-pointer transition-all border ${
+            className={`p-2 rounded-lg cursor-pointer transition-all border flex items-center justify-center ${
               showLibrary 
-                ? 'bg-[#18181B] border-[#0099FF]/40 text-white' 
+                ? 'bg-[#18181B] border-[#0099FF]/40 text-[#0099FF]' 
                 : 'bg-transparent border-[#1C1C1F] text-[#A1A1AA] hover:text-white hover:bg-[#18181B]'
             }`}
-            title="Toggle Library Catalog"
+            title={`Toggle Library Catalog (${notes.length} notes)`}
           >
-            <LibraryIcon className="h-3.5 w-3.5" />
-            <span>Library ({notes.length})</span>
+            <LibraryIcon className="h-4.5 w-4.5" />
           </button>
 
           {/* Sync status element */}
@@ -952,20 +1052,20 @@ ${noteText}`;
             <button
               onClick={handleGoogleConnect}
               disabled={isConnectingGoogle}
-              className="flex items-center gap-2 bg-white text-black hover:bg-zinc-200 transition-colors text-xs font-bold px-3 py-1.5 rounded-lg cursor-pointer disabled:opacity-50"
+              className="p-2 bg-white text-black hover:bg-zinc-200 transition-all rounded-lg cursor-pointer disabled:opacity-50 flex items-center justify-center text-center"
               id="google-sign-in-pill"
+              title={isConnectingGoogle ? 'Syncing...' : 'Connect to Google'}
             >
               {isConnectingGoogle ? (
-                <RefreshCw className="h-3 w-3 animate-spin" />
+                <RefreshCw className="h-4.5 w-4.5 animate-spin" />
               ) : (
-                <svg className="h-3.5 w-3.5" viewBox="0 0 48 48">
+                <svg className="h-4.5 w-4.5" viewBox="0 0 48 48">
                   <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"></path>
                   <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"></path>
                   <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"></path>
                   <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"></path>
                 </svg>
               )}
-              <span>{isConnectingGoogle ? 'Syncing...' : 'Connect to Google'}</span>
             </button>
           )}
         </div>
@@ -1000,12 +1100,11 @@ ${noteText}`;
                   Close Settings ✕
                 </button>
               </div>
-
               <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
                 
-                {/* COLUMN 1: OBSIDIAN LOCAL DIRECTORY SETTING */}
-                <div className="space-y-3.5 bg-[#121214] p-5 rounded-xl border border-[#1C1C1F] flex flex-col justify-between">
-                  <div className="space-y-2">
+                {/* COLUMN 1: INTEGRATION SETUP (OBSIDIAN & GOOGLE DRIVE) */}
+                <div className="space-y-4 bg-[#121214] p-5 rounded-xl border border-[#1C1C1F] flex flex-col justify-between">
+                  <div className="space-y-3">
                     <div className="flex items-center gap-2 text-white font-bold text-xs uppercase tracking-wider">
                       <BookOpen className="h-4 w-4 text-[#0099FF]" />
                       Obsidian Vault Integration
@@ -1013,120 +1112,146 @@ ${noteText}`;
                     <p className="leading-relaxed text-[#8E8E93]">
                       Obsidian operates purely on a folder of standard <code className="text-[#0099FF] bg-[#0099FF]/5 px-1 rounded font-mono text-[10px]">.md</code> files. Enter the folder path below to point EchoScribe directly to your Obsidian vault directory.
                     </p>
-                    <p className="text-[10px] italic text-[#71717A]">
-                      Whenever you record or make edits, Markdown files will save directly inside your local vault vault!
-                    </p>
-                  </div>
-
-                  <div className="space-y-2.5 pt-2">
-                    <label className="block text-[10px] uppercase tracking-wider font-bold text-zinc-400">Vault Local Path:</label>
-                    <div className="flex gap-2">
-                      <input
-                        type="text"
-                        value={inputObsidianPath}
-                        onChange={(e) => setInputObsidianPath(e.target.value)}
-                        placeholder={window.navigator.platform.toLowerCase().includes('win') ? "C:\\Users\\Account\\MyObsidianVault" : "/Users/account/Obsidian/Vault"}
-                        className="flex-1 bg-[#09090B] border border-[#27272A] text-white text-[11px] font-mono p-2 rounded-lg placeholder-zinc-700 focus:outline-[#0099FF] focus:border-[#0099FF] focus:ring-1 focus:ring-[#0099FF]/20 transition-all text-ellipsis"
-                      />
-                      <button
-                        onClick={() => handleSaveObsidianPath(inputObsidianPath)}
-                        className="bg-white hover:bg-zinc-200 text-black px-3.5 rounded-lg text-xs font-bold transition-all transition-colors cursor-pointer text-center"
-                      >
-                        Mount
-                      </button>
-                    </div>
-                    
-                    <div className="pt-2 text-[10px] text-zinc-500 space-y-1">
+                    <input
+                      type="text"
+                      value={inputObsidianPath}
+                      onChange={(e) => setInputObsidianPath(e.target.value)}
+                      placeholder={window.navigator.platform.toLowerCase().includes('win') ? "C:\\Users\\Account\\MyObsidianVault" : "/Users/account/Obsidian/Vault"}
+                      className="w-full bg-[#09090B] border border-[#27272A] text-white text-[11px] font-mono p-2 rounded-lg placeholder-zinc-700 focus:outline-[#0099FF] focus:border-[#0099FF] focus:ring-1 focus:ring-[#0099FF]/20 transition-all text-ellipsis"
+                    />
+                    <button
+                      onClick={() => handleSaveObsidianPath(inputObsidianPath)}
+                      className="w-full bg-white hover:bg-zinc-200 text-black py-1.5 rounded-lg text-xs font-bold transition-all transition-colors cursor-pointer text-center"
+                    >
+                      Mount Local Vault
+                    </button>
+                    <div className="text-[10px] text-zinc-500 space-y-1">
                       <div className="flex items-center gap-1">
                         <span className="h-1.5 w-1.5 rounded-full bg-[#0099FF]" />
                         <span>Active Target:</span>
                       </div>
-                      <div className="bg-[#09090B] p-2 rounded border border-zinc-900 break-all select-all font-mono text-[10px] text-zinc-400 leading-normal">
+                      <div className="bg-[#09090B] p-2 rounded border border-zinc-900 break-all select-all font-mono text-[9px] text-zinc-400">
                         {actualNotesDir || "Default App Folder"}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="border-t border-zinc-900/60 pt-3 space-y-2">
+                    <div className="flex items-center gap-2 text-white font-bold text-xs uppercase tracking-wider">
+                      <Cloud className="h-4 w-4 text-[#0099FF]" />
+                      Personal Google Cloud Sync
+                    </div>
+                    <p className="leading-relaxed text-[#8E8E93]">
+                      Each user connects to their **own unique Google Account** securely via Firebase popup. Once authorized, local notes backup-mirror directly into your private Google Drive folder (<code className="text-zinc-400">EchoScribe Notes</code>) and list in Google Sheets (<code className="text-zinc-400">EchoScribe Notes Index</code>). Your credentials remain yours; the app communicates directly from your browser to Google APIS.
+                    </p>
+                  </div>
+                </div>
+
+                {/* COLUMN 2: HOW THE AI REFINEMENT TOOLS WORK */}
+                <div className="space-y-3 bg-[#121214] p-5 rounded-xl border border-[#1C1C1F] flex flex-col justify-between">
+                  <div className="space-y-3.5">
+                    <div className="flex items-center gap-2 text-white font-bold text-xs uppercase tracking-wider">
+                      <Sparkles className="h-4 w-4 text-[#0099FF]" />
+                      AI Formatting & Refinement Tools
+                    </div>
+                    <p className="leading-relaxed text-[#8E8E93] pb-1">
+                      Our offline high-performance formatting utilities reconstruct raw spoken scripts with zero lag. Here is how they operate:
+                    </p>
+
+                    <div className="space-y-3 text-[11px]">
+                      <div className="bg-[#09090B] p-2.5 rounded-lg border border-[#1C1C1F]">
+                        <span className="font-bold text-white flex items-center gap-1.5 mb-1">
+                          🧹 Clean Grammar
+                        </span>
+                        <p className="text-zinc-400 leading-normal text-[10.5px]">
+                          Cleans vocal hesitation ticks (ums, ahs, stutters, repetitions) and fixes syntax punctuation while keeping your actual words intact.
+                        </p>
+                      </div>
+
+                      <div className="bg-[#09090B] p-2.5 rounded-lg border border-[#1C1C1F]">
+                        <span className="font-bold text-white flex items-center gap-1.5 mb-1">
+                          📝 Bullet Points
+                        </span>
+                        <p className="text-zinc-400 leading-normal text-[10.5px]">
+                          Synthesizes long narrative blocks, identifies key thematic pillars, and compiles them into neat bullet point lists.
+                        </p>
+                      </div>
+
+                      <div className="bg-[#09090B] p-2.5 rounded-lg border border-[#1C1C1F]">
+                        <span className="font-bold text-white flex items-center gap-1.5 mb-1">
+                          ✅ Checklist
+                        </span>
+                        <p className="text-zinc-400 leading-normal text-[10.5px]">
+                          Locates action-oriented statements, todo plans, and chores, converting them into standard interactive markdown checkbox selectors.
+                        </p>
+                      </div>
+
+                      <div className="bg-[#09090B] p-2.5 rounded-lg border border-[#1C1C1F]">
+                        <span className="font-bold text-white flex items-center gap-1.5 mb-1">
+                          💼 Minutes
+                        </span>
+                        <p className="text-zinc-400 leading-normal text-[10.5px]">
+                          Compiles speech recordings into a professional executive meeting log, outlining highlights, action points, and future schedules.
+                        </p>
                       </div>
                     </div>
                   </div>
                 </div>
 
-                {/* COLUMN 2: HOW TO RUN NATIVELY ON YOUR OWN PC */}
-                <div className="space-y-3 bg-[#121214] p-5 rounded-xl border border-[#1C1C1F] lg:col-span-2 flex flex-col justify-between">
+                {/* COLUMN 3: RUNNING NATIVELY ON YOUR PC */}
+                <div className="space-y-3 bg-[#121214] p-5 rounded-xl border border-[#1C1C1F] flex flex-col justify-between">
                   <div className="space-y-2">
                     <div className="flex items-center gap-2 text-white font-bold text-xs uppercase tracking-wider">
                       <Monitor className="h-4 w-4 text-[#0099FF]" />
-                      Run Natively on your PC (Offline Local Server)
+                      Run Natively on your PC (Offline Server)
                     </div>
                     <p className="leading-relaxed text-[#8E8E93]">
-                      By default, this preview is previewing on a sandbox container. You can instantly run this full system and all services <strong>directly on your local computer</strong> so it links seamlessly to your offline file system:
+                      Unpack your EchoScribe code folder and run it 100% offline directly on your own machine. Make updates, save locally, or build launcher files:
                     </p>
                   </div>
 
-                  <div className="grid sm:grid-cols-2 gap-4 pb-1 pt-1 text-[11px]">
-                    <div className="bg-[#09090B] p-3 rounded-lg border border-[#1C1C1F] space-y-2">
-                      <div className="font-semibold text-white flex items-center gap-1.5">
-                        <span className="bg-[#18181B] border border-zinc-805 h-4 w-4 rounded-full inline-flex items-center justify-center text-[10px]">1</span>
-                        Download Source ZIP / Git
+                  <div className="space-y-2.5 pb-2 text-[11px]">
+                    <div className="bg-[#09090B] p-2.5 rounded-lg border border-[#1C1C1F] space-y-1">
+                      <div className="font-semibold text-white">
+                        1. Export Code & Install
                       </div>
-                      <p className="text-zinc-400 leading-relaxed text-[11px]">
-                        Open the AI Studio settings menu at the top right header, and select <strong>Export to GitHub</strong> or <strong>Download ZIP</strong> to save the code to your local computer.
+                      <p className="text-zinc-400 text-[10.5px] leading-relaxed">
+                        Export ZIP in AI Studio, extract it, and run <code className="text-[#0099FF]">npm install</code> in your terminal.
                       </p>
                     </div>
 
-                    <div className="bg-[#09090B] p-3 rounded-lg border border-[#1C1C1F] space-y-1">
-                      <div className="font-semibold text-white flex items-center gap-1.5">
-                        <span className="bg-[#18181B] border border-zinc-805 h-4 w-4 rounded-full inline-flex items-center justify-center text-[10px]">2</span>
-                        Install Node Dependencies
+                    <div className="bg-[#09090B] p-2.5 rounded-lg border border-[#1C1C1F] space-y-1">
+                      <div className="font-semibold text-white">
+                        2. Create Desktop Icon Launcher
                       </div>
-                      <p className="text-zinc-400 leading-relaxed text-[11px]">
-                        Unpack the ZIP and open your computer Terminal in that folder. Install program dependencies by typing the command:
+                      <p className="text-zinc-400 text-[10.5px] leading-relaxed">
+                        Generate a startup desktop shortcut by running:
+                        <code className="block font-mono bg-zinc-950 text-sky-400 p-1 mt-1 border border-zinc-900 rounded text-center">node create-launcher.js</code>
+                        We automatically generate an **EchoScribe.bat** (Windows) or **EchoScribe.command** (macOS) double-clickable shortcut file on your Desktop!
                       </p>
-                      <pre className="bg-zinc-950 p-1.5 rounded text-[10px] font-mono text-sky-400 border border-zinc-850 select-all block mt-1.5 text-center">npm install</pre>
                     </div>
 
-                    <div className="bg-[#09090B] p-3 rounded-lg border border-[#1C1C1F] space-y-1">
-                      <div className="font-semibold text-white flex items-center gap-1.5">
-                        <span className="bg-[#18181B] border border-zinc-805 h-4 w-4 rounded-full inline-flex items-center justify-center text-[10px]">3</span>
-                        No API Keys Needed 🎉
+                    <div className="bg-[#09090B] p-2.5 rounded-lg border border-[#1C1C1F] space-y-1">
+                      <div className="font-semibold text-white flex items-center gap-1">
+                        <span className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />
+                        Fixed Launcher Race-conditions
                       </div>
-                      <p className="text-zinc-400 leading-relaxed text-[11px]">
-                        This entire application runs 100% offline and key-free. You can specify a custom server port or default vault path in your <code className="text-[#0099FF]">.env</code>:
-                      </p>
-                      <pre className="bg-zinc-950 p-1.5 rounded text-[9px] font-mono text-sky-400 border border-zinc-850 select-all block mt-1 leading-normal">
-PORT=3000
-# OBSIDIAN_VAULT_PATH=/Users/account/Vault</pre>
-                    </div>
-
-                    <div className="bg-[#09090B] p-3 rounded-lg border border-[#1C1C1F] space-y-1.5">
-                      <div className="font-semibold text-white flex items-center gap-1.5">
-                        <span className="bg-[#18181B] border border-zinc-805 h-4 w-4 rounded-full inline-flex items-center justify-center text-[10px]">4</span>
-                        Create Desktop Icon Launcher
-                      </div>
-                      <p className="text-zinc-400 leading-relaxed text-[10px]">
-                        To generate an automated, double-clickable launch icon directly on your Desktop, simply type:
-                        <code className="block select-all font-mono bg-zinc-950 text-sky-400 p-1.5 mt-1 border border-zinc-850 rounded text-center">node create-launcher.js</code>
-                        This automatically creates a desktop shortcut that boots the local server and opens your browser.
+                      <p className="text-zinc-400 text-[10.5px] leading-relaxed">
+                        The batch shortcut runs the server first, waits for completely ready hooks, then launches your local browser seamlessly!
                       </p>
                     </div>
                   </div>
 
                   {/* Auto Boot options */}
-                  <div className="border-t border-zinc-900 pt-3 flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between text-[10px]">
-                    <span className="font-semibold text-white uppercase tracking-wider text-[9px]">🖥️ SYSTEM BOOT INSTANT AUTO-STARTUP CHANNELS:</span>
-                    <div className="flex gap-4">
-                      <div>
-                        <span className="text-zinc-400">Desktop Shortcut:</span>{' '}
-                        <span className="text-[#0099FF] font-semibold">Run <code className="bg-zinc-900 p-0.5 rounded text-white font-mono break-all">node create-launcher.js</code> to output Windows (.bat) or Mac (.command) launcher</span>
-                      </div>
-                      <div>
-                        <span className="text-zinc-400">Windows Startup:</span>{' '}
-                        <span className="text-[#A1A1AA]">Copy the desktop launcher file into your folder from running <code className="bg-zinc-905 p-0.5 rounded text-white font-mono">shell:startup</code></span>
-                      </div>
-                    </div>
+                  <div className="border-t border-zinc-900 pt-3 text-[9.5px]">
+                    <span className="font-semibold text-white uppercase tracking-wider text-[8.5px] block mb-1">🖥️ Windows Auto-Startup:</span>
+                    <p className="text-zinc-500 leading-normal">
+                      Press Win+R, type <code className="bg-zinc-950 p-0.5 rounded text-white font-mono text-[9px]">shell:startup</code>, and drag the desktop launcher Bat directly into that folder to boot EchoScribe instantly on PC startup.
+                    </p>
                   </div>
-
                 </div>
 
               </div>
-
             </div>
           </motion.div>
         )}
@@ -1358,100 +1483,126 @@ PORT=3000
                       className="w-full text-sm font-bold text-white bg-transparent border-b border-transparent hover:border-zinc-800 focus:border-[#0099FF] focus:outline-hidden py-0.5 text-ellipsis overflow-hidden caret-[#0099FF]"
                     />
                   </div>
+                </div>
 
-                  <div className="flex items-center gap-2 text-xs">
-                    {/* Render visual preview vs editor selector toggles */}
-                    <div className="bg-zinc-900 border border-zinc-805 p-0.5 rounded-lg flex items-center shrink-0">
+                {/* Free offline local refinement tool dock */}
+                <div className="bg-[#121214] border-b border-[#1C1C1F] py-2 px-6 flex items-center justify-between gap-4" id="format-refinement-row">
+                  <div className="flex flex-wrap items-center gap-2">
+                    {/* Read & Edit Markdown tabs - icon only with tooltips */}
+                    <div className="bg-zinc-900 border border-zinc-800 p-0.5 rounded-lg flex items-center shrink-0 mr-1.5">
                       <button
                         onClick={() => setIsEditorMode(false)}
-                        className={`px-3 py-1 rounded text-[10px] font-semibold transition-all ${
+                        className={`p-1.5 rounded transition-all cursor-pointer ${
                           !isEditorMode 
-                            ? 'bg-[#18181B] text-[#0099FF] shadow-xs' 
-                            : 'text-zinc-500 hover:text-zinc-300'
+                            ? 'bg-[#18181B] text-[#0099FF]' 
+                            : 'text-zinc-550 text-zinc-500 hover:text-zinc-300'
                         }`}
+                        title="Read Note Preview"
                       >
-                        <BookOpen className="h-3 w-3 inline mr-1" />
-                        Read
+                        <BookOpen className="h-4 w-4" />
                       </button>
                       <button
                         onClick={() => setIsEditorMode(true)}
-                        className={`px-3 py-1 rounded text-[10px] font-semibold transition-all ${
+                        className={`p-1.5 rounded transition-all cursor-pointer ${
                           isEditorMode 
-                            ? 'bg-[#18181B] text-[#0099FF] shadow-xs' 
-                            : 'text-zinc-500 hover:text-zinc-300'
+                            ? 'bg-[#18181B] text-[#0099FF]' 
+                            : 'text-zinc-550 text-zinc-500 hover:text-zinc-300'
                         }`}
+                        title="Edit Markdown Content"
                       >
-                        <Edit className="h-3 w-3 inline mr-1" />
-                        Edit Markdown
+                        <Edit className="h-4 w-4" />
                       </button>
                     </div>
 
-                    <div className="h-4 w-[1px] bg-zinc-800" />
+                    <button
+                      type="button"
+                      disabled={isRefining || !noteText}
+                      onClick={() => applyAIRefinement('raw')}
+                      className="px-2.5 py-1.5 rounded bg-zinc-900 hover:bg-zinc-850 hover:border-[#0099FF]/30 text-[10px] text-zinc-300 border border-zinc-800 transition-colors cursor-pointer disabled:opacity-30 inline-flex items-center gap-1.5"
+                      title="Removes um/ah filler words, stutters, and fixes punctuation instantly"
+                    >
+                      <Sparkles className="h-4 w-4 text-zinc-400" />
+                      <span>Clean Grammar</span>
+                    </button>
 
+                    <button
+                      type="button"
+                      disabled={isRefining || !noteText}
+                      onClick={() => applyAIRefinement('bullet_points')}
+                      className="px-2.5 py-1.5 rounded bg-zinc-900 hover:bg-zinc-850 hover:border-[#0099FF]/30 text-[10px] text-zinc-300 border border-zinc-800 transition-colors cursor-pointer disabled:opacity-30 inline-flex items-center gap-1.5"
+                      title="Instantly group thoughts of raw record into bullet lists"
+                    >
+                      <List className="h-4 w-4 text-zinc-400" />
+                      <span>Bullet Points</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      disabled={isRefining || !noteText}
+                      onClick={() => applyAIRefinement('checklist')}
+                      className="px-2.5 py-1.5 rounded bg-zinc-900 hover:bg-zinc-850 hover:border-[#0099FF]/30 text-[10px] text-zinc-300 border border-zinc-800 transition-colors cursor-pointer disabled:opacity-30 inline-flex items-center gap-1.5"
+                      title="Build checklist todo items"
+                    >
+                      <CheckSquare className="h-4 w-4 text-zinc-400" />
+                      <span>Checklist</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      disabled={isRefining || !noteText}
+                      onClick={() => applyAIRefinement('meeting_minutes')}
+                      className="px-2.5 py-1.5 rounded bg-zinc-900 hover:bg-zinc-850 hover:border-[#0099FF]/30 text-[10px] text-zinc-300 border border-zinc-800 transition-colors cursor-pointer disabled:opacity-30 inline-flex items-center gap-1.5"
+                      title="Draft agenda highlights and task items"
+                    >
+                      <FileText className="h-4 w-4 text-zinc-400" />
+                      <span>Minutes</span>
+                    </button>
+
+                    {isRefining && (
+                      <div className="flex items-center gap-1 ml-2 text-[10px] text-[#0099FF] font-mono font-medium">
+                        <RefreshCw className="h-2.5 w-2.5 animate-spin mr-1" />
+                        <span>Formulating...</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Consolidate Action Buttons on the Right Side of the formatting row */}
+                  {/* Keep only structural, light-weight, text-removed icon buttons with hover tooltips */}
+                  <div className="flex items-center gap-1 shrink-0 bg-[#09090B] border border-zinc-800 p-1 rounded-lg">
                     {/* Sync changes */}
                     <button
                       onClick={() => saveNoteToServer()}
                       disabled={isSaving}
-                      className="bg-[#0099FF] hover:brightness-110 text-neutral-900 font-bold text-[11px] px-3.5 py-1.5 rounded-lg shadow-sm transition-all flex items-center gap-1 cursor-pointer disabled:opacity-50 shrink-0"
+                      className="p-1.5 rounded hover:text-[#0099FF] hover:bg-[#121214] transition-all cursor-pointer disabled:opacity-30 text-zinc-400"
+                      title="Sync Notes (Save changes to local vault & Google cloud)"
                     >
-                      {isSaving ? <RefreshCw className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
-                      <span>Sync</span>
+                      {isSaving ? (
+                        <RefreshCw className="h-4 w-4 animate-spin text-[#0099FF]" />
+                      ) : (
+                        <Save className="h-4 w-4" />
+                      )}
+                    </button>
+
+                    {/* Copy content */}
+                    <button
+                      onClick={copyRawContent}
+                      disabled={!noteText}
+                      className="p-1.5 rounded hover:text-[#0099FF] hover:bg-[#121214] transition-all cursor-pointer disabled:opacity-30 text-zinc-400"
+                      title="Copy raw markdown to clipboard"
+                    >
+                      <Copy className="h-4 w-4" />
+                    </button>
+
+                    {/* Download file */}
+                    <button
+                      onClick={downloadMarkdownFileLocal}
+                      disabled={!noteText}
+                      className="p-1.5 rounded hover:text-[#0099FF] hover:bg-[#121214] transition-all cursor-pointer disabled:opacity-30 text-zinc-400"
+                      title="Download as physical markdown backup"
+                    >
+                      <Download className="h-4 w-4" />
                     </button>
                   </div>
-                </div>
-
-                {/* Free offline local refinement tool dock */}
-                <div className="bg-[#121214] border-b border-[#1C1C1F] py-2.5 px-6 flex flex-wrap items-center gap-2" id="format-refinement-row">
-                  <span className="text-[9px] uppercase font-bold tracking-wider text-[#0099FF] font-mono flex items-center gap-1 shrink-0 mr-1 animate-pulse" title="Offline format transformations">
-                    <Sparkles className="h-3.5 w-3.5" />
-                  </span>
-                  
-                  <button
-                    type="button"
-                    disabled={isRefining || !noteText}
-                    onClick={() => applyAIRefinement('raw')}
-                    className="px-2.5 py-1 rounded bg-zinc-900 hover:bg-zinc-850 hover:border-[#0099FF]/30 text-[10px] text-zinc-300 border border-zinc-800 transition-all cursor-pointer disabled:opacity-30"
-                    title="Removes um/ah filler words, stutters, and fixes punctuation instantly"
-                  >
-                    🧹 Clean Grammar
-                  </button>
-
-                  <button
-                    type="button"
-                    disabled={isRefining || !noteText}
-                    onClick={() => applyAIRefinement('bullet_points')}
-                    className="px-2.5 py-1 rounded bg-zinc-900 hover:bg-zinc-850 hover:border-[#0099FF]/30 text-[10px] text-zinc-300 border border-zinc-800 transition-all cursor-pointer disabled:opacity-30"
-                    title="Instantly group thoughts of raw record into bullet lists"
-                  >
-                    📝 Bullet Points
-                  </button>
-
-                  <button
-                    type="button"
-                    disabled={isRefining || !noteText}
-                    onClick={() => applyAIRefinement('checklist')}
-                    className="px-2.5 py-1 rounded bg-zinc-900 hover:bg-zinc-850 hover:border-[#0099FF]/30 text-[10px] text-zinc-300 border border-zinc-800 transition-all cursor-pointer disabled:opacity-30"
-                    title="Build checklist todo items"
-                  >
-                    ✅ Checklist
-                  </button>
-
-                  <button
-                    type="button"
-                    disabled={isRefining || !noteText}
-                    onClick={() => applyAIRefinement('meeting_minutes')}
-                    className="px-2.5 py-1 rounded bg-zinc-900 hover:bg-zinc-850 hover:border-[#0099FF]/30 text-[10px] text-zinc-300 border border-zinc-800 transition-all cursor-pointer disabled:opacity-30"
-                    title="Draft agenda highlights and task items"
-                  >
-                    💼 Minutes
-                  </button>
-
-                  {isRefining && (
-                    <div className="flex items-center gap-1 ml-auto text-[10px] text-[#0099FF] font-mono font-medium">
-                      <RefreshCw className="h-2.5 w-2.5 animate-spin mr-1" />
-                      <span>Formulating...</span>
-                    </div>
-                  )}
                 </div>
 
                 {/* Editor or view content page sheet */}
@@ -1490,25 +1641,6 @@ PORT=3000
                      <span className="text-zinc-700">|</span>
                      <span>Type: {selectedNote.transcriptionType === 'ai' ? 'Multimodal' : 'SpeechAPI'}</span>
                    </div>
-
-                   <div className="flex items-center gap-1.5">
-                     <button
-                       onClick={copyRawContent}
-                       className="p-1 px-2.5 rounded font-bold text-[#A1A1AA] hover:text-white text-[10px] hover:bg-zinc-900 transition-colors flex items-center gap-1 cursor-pointer"
-                       title="Copy markdown text"
-                     >
-                       <Copy className="h-3.5 w-3.5 text-[#0099FF]" />
-                       <span>Copy</span>
-                     </button>
-                     <button
-                       onClick={downloadMarkdownFileLocal}
-                       className="p-1 px-2.5 rounded font-bold text-[#A1A1AA] hover:text-white text-[10px] hover:bg-zinc-900 transition-colors flex items-center gap-1 cursor-pointer"
-                       title="Download as physical backup note"
-                     >
-                       <Download className="h-3.5 w-3.5 text-[#0099FF]" />
-                       <span>Download</span>
-                     </button>
-                   </div>
                 </div>
 
               </div>
@@ -1516,11 +1648,11 @@ PORT=3000
               <div className="flex-1 flex flex-col items-center justify-center p-8 text-center text-zinc-600 h-full" id="blank-editor-main-state">
                 <button 
                   onClick={() => {
-                      setNoteTitle('Drafting Sheet');
+                      setNoteTitle('Untitled Note');
                       setNoteText('');
                       setSelectedNote({
                         filename: `note_draft_${Date.now()}.md`,
-                        title: 'Drafting Sheet',
+                        title: 'Untitled Note',
                         content: '',
                         createdAt: new Date().toISOString(),
                         transcriptionType: 'realtime'

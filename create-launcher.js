@@ -30,10 +30,18 @@ title EchoScribe Local Server Manager
 cd /d "${targetFolder}"
 echo Starting EchoScribe offline local core...
 echo Close this terminal window only if you want to turn off the recorder app.
+echo.
+echo Launching local server process in background...
+start /b cmd /c "npm run dev"
+echo Waiting for server to initialize (3 seconds)...
+timeout /t 3 /nobreak >nul
 echo Opening app in browser at http://localhost:3000
 start "" "http://localhost:3000"
-npm run dev
-pause
+echo.
+echo Logs will display below. Press Control+C in this window to stop.
+echo ----------------------------------------------------------------------
+:: This keeps the batch process running so logs continue streaming
+pause >nul
 `;
 
   try {
@@ -52,9 +60,17 @@ echo "========================================="
 echo "   EchoScribe Local Server Manager      "
 echo "========================================="
 cd "${targetFolder}"
-echo "Booting app offline at http://localhost:3000 ..."
+echo "Booting local app server process..."
+npm run dev &
+SERVER_PID=$!
+
+echo "Waiting for server to initialize (3 seconds)..."
+sleep 3
+echo "Opening app in browser at http://localhost:3000 ..."
 open "http://localhost:3000"
-npm run dev
+
+# Wait for background server process to complete
+wait $SERVER_PID
 `;
 
   try {
@@ -71,8 +87,11 @@ npm run dev
   const linuxPath = path.join(DESKTOP_DIR, 'EchoScribe.sh');
   const linuxScript = `#!/bin/bash
 cd "${targetFolder}"
+npm run dev &
+SERVER_PID=$!
+sleep 3
 xdg-open "http://localhost:3000"
-npm run dev
+wait $SERVER_PID
 `;
   try {
     fs.writeFileSync(linuxPath, linuxScript, 'utf-8');
