@@ -133,6 +133,46 @@ export default function App() {
   const [interimTranscript, setInterimTranscript] = useState('');
   const [audioWaveform, setAudioWaveform] = useState<number[]>([]);
 
+  // Hardware and audio routing state/refs
+  const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
+  const [selectedDeviceId, setSelectedDeviceId] = useState<string>('');
+  const [micPermissionState, setMicPermissionState] = useState<string>('unknown');
+
+  const activeStreamRef = useRef<MediaStream | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const dataArrayRef = useRef<Uint8Array | null>(null);
+  const animationFrameRef = useRef<number | null>(null);
+
+  const enumerateAudioDevices = async () => {
+    try {
+      const devList = await navigator.mediaDevices.enumerateDevices();
+      const audioInputs = devList.filter(d => d.kind === 'audioinput');
+      setDevices(audioInputs);
+      if (audioInputs.length > 0) {
+        // Find default or use first found device
+        const defaultDevice = audioInputs.find(d => d.deviceId === 'default') || audioInputs[0];
+        setSelectedDeviceId(prev => prev || defaultDevice.deviceId);
+      }
+    } catch (err) {
+      console.warn("Could not list audio inputs:", err);
+    }
+  };
+
+  const checkMicPermission = async () => {
+    try {
+      if (navigator.permissions && navigator.permissions.query) {
+        const res = await navigator.permissions.query({ name: 'microphone' as any });
+        setMicPermissionState(res.state);
+        res.onchange = () => {
+          setMicPermissionState(res.state);
+        };
+      }
+    } catch (e) {
+      console.warn("Could not query microphone permission state", e);
+    }
+  };
+
   // System & Toast configurations
   const [apiHealth, setApiHealth] = useState<{ hasApiKey: boolean; status: string } | null>(null);
   const [notificationPermission, setNotificationPermission] = useState<'default' | 'granted' | 'denied' | 'unsupported'>('default');
@@ -167,6 +207,8 @@ export default function App() {
     fetchHealthCheck();
     fetchSettings();
     fetchNotesList();
+    enumerateAudioDevices();
+    checkMicPermission();
 
     // Setup Notification status
     if (!('Notification' in window)) {
@@ -569,18 +611,89 @@ ${noteText}`;
     }
   };
 
-  // Waveform effect loop
-  const simulateWaveforms = () => {
+  // Start real-time audio analysis using active microphone levels
+  const startAnalyser = (stream: MediaStream) => {
+    try {
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      if (!AudioCtx) {
+        simulateWaveformsFallback();
+        return;
+      }
+
+      const ctx = new AudioCtx();
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 64; 
+      const bufferLength = analyser.frequencyBinCount;
+      const dataArray = new Uint8Array(bufferLength);
+
+      const source = ctx.createMediaStreamSource(stream);
+      source.connect(analyser);
+
+      audioContextRef.current = ctx;
+      analyserRef.current = analyser;
+      dataArrayRef.current = dataArray;
+
+      const drawWaveform = () => {
+        if (!isRecordingRef.current) return;
+        animationFrameRef.current = requestAnimationFrame(drawWaveform);
+
+        if (analyserRef.current && dataArrayRef.current && !isPausedRef.current) {
+          analyserRef.current.getByteFrequencyData(dataArrayRef.current);
+
+          const newWaveform: number[] = [];
+          const step = Math.max(1, Math.floor(dataArrayRef.current.length / 18));
+
+          for (let i = 0; i < 18; i++) {
+            let sum = 0;
+            const startIdx = i * step;
+            const endIdx = Math.min(startIdx + step, dataArrayRef.current.length);
+            for (let j = startIdx; j < endIdx; j++) {
+              sum += dataArrayRef.current[j];
+            }
+            const avg = sum / (endIdx - startIdx || 1);
+            const heightValue = Math.max(6, Math.floor((avg / 255) * 36) + 6);
+            newWaveform.push(heightValue);
+          }
+          setAudioWaveform(newWaveform);
+        } else if (isPausedRef.current) {
+          setAudioWaveform(Array(18).fill(6));
+        }
+      };
+
+      drawWaveform();
+    } catch (err) {
+      console.warn("Could not start visual analyzer, using simulation fallback", err);
+      simulateWaveformsFallback();
+    }
+  };
+
+  const simulateWaveformsFallback = () => {
     waveformIntervalRef.current = setInterval(() => {
       if (!isPausedRef.current) {
         setAudioWaveform(prev => {
           const next = [...prev];
-          if (next.length > 25) next.shift();
-          next.push(Math.floor(Math.random() * 85) + 10);
-          return next;
+          if (next.length > 18) next.shift();
+          while (next.length < 18) next.push(6);
+          next.push(Math.floor(Math.random() * 25) + 8);
+          return next.slice(-18);
         });
       }
     }, 110);
+  };
+
+  const stopAnalyser = () => {
+    if (animationFrameRef.current) {
+      cancelAnimationFrame(animationFrameRef.current);
+      animationFrameRef.current = null;
+    }
+    if (audioContextRef.current) {
+      if (audioContextRef.current.state !== 'closed') {
+        audioContextRef.current.close().catch(() => {});
+      }
+      audioContextRef.current = null;
+    }
+    analyserRef.current = null;
+    dataArrayRef.current = null;
   };
 
   // --- RECORDING WORKFLOWS & PAUSE CONTROLS ---
@@ -624,9 +737,15 @@ ${noteText}`;
       return;
     }
 
+    let stream: MediaStream;
     try {
-      await navigator.mediaDevices.getUserMedia({ audio: true });
-    } catch {
+      const constraints = {
+        audio: selectedDeviceId ? { deviceId: { exact: selectedDeviceId } } : true
+      };
+      stream = await navigator.mediaDevices.getUserMedia(constraints);
+      activeStreamRef.current = stream;
+    } catch (err) {
+      console.error(err);
       triggerToast("Microphone denied. Check browser voice permissions.", "error");
       return;
     }
@@ -649,12 +768,15 @@ ${noteText}`;
       }
     }, 1000);
 
-    simulateWaveforms();
+    startAnalyser(stream);
+
+    // Refresh devices list so that labelled formats are loaded!
+    enumerateAudioDevices();
 
     if (recordingMode === 'realtime') {
       runBrowserSpeechRecognition();
     } else {
-      runMultimodalAudioRecording();
+      runMultimodalAudioRecording(stream);
     }
   };
 
@@ -686,6 +808,12 @@ ${noteText}`;
       } catch (err) {
         console.error(err);
       }
+    }
+
+    stopAnalyser();
+    if (activeStreamRef.current) {
+      activeStreamRef.current.getTracks().forEach(t => t.stop());
+      activeStreamRef.current = null;
     }
 
     triggerToast("Recording ended", "info");
@@ -794,10 +922,12 @@ ${noteText}`;
     rec.start();
   };
 
-  // Multimodal Gemini WAV snippet capture
-  const runMultimodalAudioRecording = async () => {
+  // Multimodal Gemini WAV snippet capture with stream reuse
+  const runMultimodalAudioRecording = async (existingStream?: MediaStream) => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const stream = existingStream || activeStreamRef.current || await navigator.mediaDevices.getUserMedia({
+        audio: selectedDeviceId ? { deviceId: { exact: selectedDeviceId } } : true
+      });
       let recorder: MediaRecorder;
       
       try {
@@ -815,9 +945,6 @@ ${noteText}`;
 
       recorder.onstop = async () => {
         const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-        // Release tracks
-        stream.getTracks().forEach(t => t.stop());
-        
         // Process
         await processMultimodalAudioBlob(audioBlob);
       };
@@ -825,7 +952,8 @@ ${noteText}`;
       mediaRecorderRef.current = recorder;
       recorder.start(1000);
       triggerToast("AI tape recorder running...", "success");
-    } catch {
+    } catch (err) {
+      console.error(err);
       triggerToast("Failed to launch recording hardware", "error");
       setIsRecording(false);
     }
@@ -1262,6 +1390,78 @@ ${noteText}`;
                 </div>
 
               </div>
+
+              {/* MICROPHONE ROUTING & HARDWARE DIAGNOSTICS */}
+              <div className="bg-[#121214] p-5 rounded-xl border border-[#1C1C1F] space-y-4">
+                <div className="flex items-center justify-between border-b border-zinc-900 pb-3">
+                  <div className="flex items-center gap-2">
+                    <span className="relative flex h-2 w-2">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#0099FF] opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-[#0099FF]"></span>
+                    </span>
+                    <h4 className="font-bold text-white text-[11px] uppercase tracking-wider">Hardware Connection & Microphone Direct Routing</h4>
+                  </div>
+                  <div className="flex items-center gap-1.5 font-mono text-[9.5px]">
+                    <span className="text-zinc-500">System Permission:</span>
+                    <span className={`px-2 py-0.5 rounded-full font-semibold uppercase ${
+                      micPermissionState === 'granted' ? 'bg-emerald-950/40 text-emerald-400 border border-emerald-900/30' :
+                      micPermissionState === 'denied' ? 'bg-red-950/40 text-red-400 border border-red-900/40' :
+                      'bg-[#1c1c1f] text-zinc-400 border border-[#27272a]'
+                    }`}>
+                      {micPermissionState}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 items-center text-xs">
+                  <div className="space-y-1.5">
+                    <span className="font-semibold text-zinc-300 block">Select Audio Input Device:</span>
+                    <p className="text-[10.5px] text-zinc-500 leading-normal">
+                      Force EchoScribe to capture voices from a specific physical audio device instead of the default hardware channel.
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    {devices.length === 0 ? (
+                      <button
+                        onClick={enumerateAudioDevices}
+                        className="w-full bg-[#09090B] border border-red-950/20 text-red-305 py-2.5 px-4 rounded-lg font-bold text-center hover:bg-red-950/10 cursor-pointer transition-colors text-[11px] text-red-400"
+                      >
+                        ⚠️ Request System Microphones Access
+                      </button>
+                    ) : (
+                      <div className="w-full relative flex items-center">
+                        <select
+                          value={selectedDeviceId}
+                          onChange={(e) => {
+                            setSelectedDeviceId(e.target.value);
+                            triggerToast(`Redirected audio output source!`, "success");
+                          }}
+                          className="w-full bg-[#09090B] border border-[#27272A] text-white text-[11px] py-2.5 pl-3.5 pr-10 rounded-lg focus:outline-[#0099FF] focus:border-[#0099FF]/50 focus:ring-1 focus:ring-[#0099FF]/20 font-medium cursor-pointer"
+                        >
+                          {devices.map(device => (
+                            <option key={device.deviceId} value={device.deviceId} className="bg-[#121214]">
+                              {device.label || `Microphone Input Channel`}
+                            </option>
+                          ))}
+                        </select>
+                        <button
+                          onClick={enumerateAudioDevices}
+                          className="absolute right-2 p-1.5 hover:bg-[#18181B] rounded text-sky-400 hover:text-[#0099FF] transition-colors cursor-pointer"
+                          title="Refresh sound cards"
+                        >
+                          <RefreshCw className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="text-[10.5px] text-zinc-500 leading-relaxed bg-[#09090B] p-3 rounded-lg border border-zinc-900 border-dashed">
+                    <span className="text-zinc-300 font-semibold block mb-1">💡 Microphone Troubleshooting:</span>
+                    If EchoScribe isn't recording, make sure your microphone is plugged in, choose it from the dropdown to route it, and unlock browser mic queries in your browser's address-bar privacy pad.
+                  </div>
+                </div>
+              </div>
             </div>
           </motion.div>
         )}
@@ -1467,6 +1667,49 @@ ${noteText}`;
                   </p>
                 )}
               </div>
+
+              {/* Audio Input Device Selector Capsule */}
+              {!isRecording && !isTranscribingAudio && (
+                <div className="flex flex-col items-center space-y-1 mt-1">
+                  <div className="flex items-center gap-1.5 bg-[#121214] border border-[#1C1C1F] hover:border-[#27272A] rounded-full px-3.5 py-1.5 text-[11px] font-medium text-zinc-400 hover:text-white transition-all shadow-xs">
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                    <span className="text-[9px] text-[#0099FF] uppercase tracking-wide font-mono font-bold mr-1">Mic Source:</span>
+                    {devices.length === 0 ? (
+                      <button 
+                        onClick={enumerateAudioDevices} 
+                        className="hover:underline transition-colors cursor-pointer text-zinc-400 font-semibold text-xs"
+                      >
+                        List Audio Devices
+                      </button>
+                    ) : (
+                      <select
+                        value={selectedDeviceId}
+                        onChange={(e) => {
+                          setSelectedDeviceId(e.target.value);
+                          triggerToast("Active microphone stream set!", "success");
+                        }}
+                        className="bg-transparent text-zinc-300 font-medium outline-hidden border-none text-[11px] cursor-pointer max-w-[180px] truncate"
+                      >
+                        {devices.map(device => (
+                          <option key={device.deviceId} value={device.deviceId} className="bg-[#121214] text-zinc-300">
+                            {device.label || `Microphone Input Channel`}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                    <button 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        enumerateAudioDevices();
+                      }}
+                      className="p-1 hover:bg-[#18181B] rounded text-sky-400 hover:text-[#0099FF] transition-colors cursor-pointer"
+                      title="Refresh microphone listing"
+                    >
+                      <RefreshCw className="h-2.5 w-2.5" />
+                    </button>
+                  </div>
+                </div>
+              )}
 
               {/* Speaking interim transcript block */}
               {interimTranscript && (

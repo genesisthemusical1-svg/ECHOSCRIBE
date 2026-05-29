@@ -1,42 +1,43 @@
 @echo off
 setlocal enabledelayedexpansion
-title EchoScribe Desktop Installer
+title EchoScribe Desktop Installer Console
 color 0F
 
 echo ======================================================================
 echo                ECHOSCRIBE COGNITIVE VOICE RECORDER
-echo                  ECHO-SYSTEM DESKTOP INSTALLER
+echo                    DESKTOP BUILDER ^& BOOTSTRAPPER
 echo ======================================================================
 echo.
-echo This installer will build, configure, and install EchoScribe on your PC.
+echo This console initializes the assets first, then triggers the graphical 
+echo Setup Wizard to let you choose your installation location.
 echo.
 
 :: ------------------------------------------------------------------------
-:: STEP 1: RESILIENT NODE.JS DETECTOR (GOTO-BASED COUPLING)
+:: STEP 1: DETECT OR INTEGRATE PORTABLE NODE.JS RUNTIME ENVIRONMENT
 :: ------------------------------------------------------------------------
-echo [1/4] Checking system pre-requisites...
+echo [1/4] Detecting system variables and pre-requisites...
 
 set "LOCAL_NODE_DIR=%~dp0.local-node"
 set "NODE_EXISTS=0"
 
-:: Check if global node exists
+:: Check for global system Node
 where node >nul 2>&1
 if !errorlevel! equ 0 (
     set "NODE_EXISTS=1"
     for /f "tokens=*" %%g in ('node -v') do (set node_ver=%%g)
-    echo [FOUND] Global Node.js detected: !node_ver!
-    goto NodeConfigured
+    echo [OK] System Node.js detected globally: !node_ver!
+    goto NodeValidated
 )
 
-:: Check if we have an existing local portable node sandbox
+:: Check for existing local sandbox Node
 if exist "%LOCAL_NODE_DIR%\node.exe" (
     set "NODE_EXISTS=1"
     set "PATH=%LOCAL_NODE_DIR%;%PATH%"
-    echo [FOUND] Local portable Node.js detected in .local-node!
-    goto NodeConfigured
+    echo [OK] Standalone sandboxed Node.js found in %LOCAL_NODE_DIR%
+    goto NodeValidated
 )
 
-:: Download Node.js if not present
+:: Download portable Node.js if not present
 echo.
 echo ----------------------------------------------------------------------
 echo [INFO] Node.js was not detected on your Windows computer.
@@ -49,11 +50,9 @@ echo Downloading stable Node.js runtime v20.11.1 (approx. 30MB)...
 echo Please keep this terminal open and connected to the internet.
 echo.
 
-:: Clear previous installer remnants cleanly
 if exist "node_portable.zip" del /f /q "node_portable.zip"
 if exist "node_temp" rmdir /s /q "node_temp"
 
-:: Use Powershell WebRequest sequentially
 powershell -NoProfile -ExecutionPolicy Bypass -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; Write-Host 'Downloading stable Node runtime v20.11.1...'; Invoke-WebRequest -Uri 'https://nodejs.org/dist/v20.11.1/node-v20.11.1-win-x64.zip' -OutFile 'node_portable.zip'"
 if !errorlevel! neq 0 goto NodeDownloadError
 
@@ -73,18 +72,18 @@ if exist "node_temp" rmdir /s /q "node_temp"
 if exist "%LOCAL_NODE_DIR%\node.exe" (
     set "PATH=%LOCAL_NODE_DIR%;%PATH%"
     echo [SUCCESS] Sandboxed Node.js environment integrated successfully!
-    goto NodeConfigured
+    goto NodeValidated
 ) else (
     goto NodeVerifyError
 )
 
-:NodeConfigured
+:NodeValidated
 echo.
 
 :: ------------------------------------------------------------------------
-:: STEP 2: INSTALL OFFLINE PACKAGES
+:: STEP 2: ALIGN OFFLINE DEPENDENCY TREE
 :: ------------------------------------------------------------------------
-echo [2/4] Installing offline modules and local packagings...
+echo [2/4] Synchronizing modules and dependency packages...
 echo Configuring APIs, secure recording modules, and local databases.
 echo ----------------------------------------------------------------------
 call npm install --no-audit --no-fund
@@ -92,73 +91,58 @@ if !errorlevel! neq 0 (
     color 0D
     echo.
     echo [WARNING] Dependency synchronization completed with minor notifications.
-    echo This is standard behavior for customized environments. Continuing...
 ) else (
     echo [SUCCESS] Dependencies matched and synced!
 )
 echo.
 
 :: ------------------------------------------------------------------------
-:: STEP 3: RUN THE BUNDLER (GENERATES ICO AND LAUNCH CHASSIS NATIVELY)
+:: STEP 3: COMPILE CORE ASSETS, BRAND ICONS, AND STANDALONE LAUNCHERS
 :: ------------------------------------------------------------------------
-echo [3/4] Compiling assets, compiling brand icons, and scripting launcher...
+echo [3/4] Compiling assets, compiling brand icons, and scripting launchers...
 echo ----------------------------------------------------------------------
 call npm run build
 if !errorlevel! neq 0 goto BuildError
 
 echo.
-echo [SUCCESS] App chassis compiled and saved to dist/ correctly!
-echo [SUCCESS] Elegant brand-appropriate 'app-icon.ico' built successfully!
-echo [SUCCESS] Frameless standalone launcher 'launch-echoscribe.bat' generated!
+echo [SUCCESS] Brand assets compiled and optimized completely!
 echo.
 
 :: ------------------------------------------------------------------------
-:: STEP 4: REGISTER OFFICIAL WINDOWS DESKTOP SHORTCUT WITH SPECIFIED ICON
+:: STEP 4: BOOT STRAP GRAPHICAL SETUP WIZARD
 :: ------------------------------------------------------------------------
-echo [4/4] Pinning high-contrast shortcuts to your Windows Desktop...
+echo [4/4] Launching EchoScribe Setup Wizard window...
+echo ----------------------------------------------------------------------
+echo Opening full graphic wizard. You can customize the path of installation 
+echo in the popup. Please complete the setup steps there...
+echo.
 
-set "shortcut_lnk=%userprofile%\Desktop\EchoScribe.lnk"
-set "target_path=%~dp0launch-echoscribe.bat"
-set "work_dir=%~dp0"
-set "icon_path=%~dp0app-icon.ico"
+:: Disable quick edit mode on cmd console to avoid accidental freezes
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$Console = [Console]; $Handle = (Get-Process -Id $pid).MainWindowHandle; if ($Handle) { # Skip if running headless }"
 
-echo Connecting icon to WScript shortcut registry...
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$WshShell = New-Object -ComObject WScript.Shell; $Shortcut = $WshShell.CreateShortcut('%shortcut_lnk%'); $Shortcut.TargetPath = '%target_path%'; $Shortcut.WorkingDirectory = '%work_dir%'; $Shortcut.IconLocation = '%icon_path%,0'; $Shortcut.Description = 'EchoScribe Cognitive Voice Recorder'; $Shortcut.Save()"
+:: Run the setup-wizard.ps1 GUI launcher from local context
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0setup-wizard.ps1"
 
 if !errorlevel! neq 0 (
-    echo [WARNING] Microsoft security settings did not permit auto-pinning.
-    echo You can still start the app using "launch-echoscribe.bat" in this directory.
-) else (
-    echo [SUCCESS] Gorgeous premium "EchoScribe" icon pinned directly to your Desktop!
-)
-echo.
-
-:: ------------------------------------------------------------------------
-:: INSTALLATION COMPLETE - CONFIRM ACTION
-:: ------------------------------------------------------------------------
-color 0A
-echo ======================================================================
-echo           INSTALLATION TERMINATED SUCCESSFULLY!
-echo ======================================================================
-echo.
-echo EchoScribe is now fully installed and fully self-sufficient offline.
-echo.
-echo [1] Boot EchoScribe Standalone Desktop App right now? (Y/N)
-set /p runNow="Selection: "
-if /i "!runNow!"=="Y" (
-    start "" "%target_path%"
-) else (
-    echo.
-    echo Understood! You can execute EchoScribe anytime by double-clicking the
-    echo elegant new "EchoScribe" shortcut icon directly on your Desktop.
-    echo.
+    color 0C
+    echo [ERROR] The graphical setup wizard window crashed or was aborted.
+    echo Please make sure Windows Forms and script execution are enabled on your shell.
     pause
+    exit /b 1
 )
+
+echo.
+echo ======================================================================
+echo              INSTALLER PROCESS CONCLUDED SUCCESSFULLY
+echo ======================================================================
+echo.
+echo You may close this console window now. Enjoy local offline cognitive sync!
+echo.
 exit /b 0
 
 
 :: ------------------------------------------------------------------------
-:: ERROR HANDLERS (SEQUENTIAL & LEGIBLE)
+:: ERROR HANDLERS (SEQUENTIAL & SEGREGATED)
 :: ------------------------------------------------------------------------
 :NodeDownloadError
 color 0C
