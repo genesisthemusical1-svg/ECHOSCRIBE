@@ -291,7 +291,7 @@ $btnS2Browse.Add_Click({
     $folderBrowser.SelectedPath = $txtS2Path.Text
     if ($folderBrowser.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
         $txtS2Path.Text = $folderBrowser.SelectedPath
-        $selectedPath = $folderBrowser.SelectedPath
+        $script:selectedPath = $folderBrowser.SelectedPath
     }
 })
 $panelStep2.Controls.Add($btnS2Browse)
@@ -387,7 +387,7 @@ $panelStep4.Controls.Add($chkS4Run)
 # ------------------------------------------------------------------------
 function RefreshStepIndicator {
     for ($i = 0; $i -lt $stepLabels.Length; $i++) {
-        if ($i -eq $currentStep) {
+        if ($i -eq $script:currentStep) {
             $stepLabels[$i].ForeColor = $COLOR_ACCENT
             $stepLabels[$i].Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
         } else {
@@ -398,29 +398,29 @@ function RefreshStepIndicator {
 }
 
 function GoToNextStep {
-    if ($currentStep -eq 0) {
+    if ($script:currentStep -eq 0) {
         # Go to License agreement
         $panelStep0.Visible = $false
         $panelStep1.Visible = $true
-        $currentStep = 1
+        $script:currentStep = 1
         $btnBack.Enabled = $true
         $btnNext.Enabled = $chkS1Accept.Checked # Only allow next if accepted
         RefreshStepIndicator
     }
-    elseif ($currentStep -eq 1) {
+    elseif ($script:currentStep -eq 1) {
         # Go to Path selector
         $panelStep1.Visible = $false
         $panelStep2.Visible = $true
-        $currentStep = 2
+        $script:currentStep = 2
         $btnNext.Enabled = $true
         RefreshStepIndicator
     }
-    elseif ($currentStep -eq 2) {
+    elseif ($script:currentStep -eq 2) {
         # Save custom path and step to Installing state
-        $selectedPath = $txtS2Path.Text
+        $script:selectedPath = $txtS2Path.Text
         $panelStep2.Visible = $false
         $panelStep3.Visible = $true
-        $currentStep = 3
+        $script:currentStep = 3
         $btnBack.Enabled = $false
         $btnNext.Enabled = $false
         $btnCancel.Enabled = $false
@@ -429,10 +429,10 @@ function GoToNextStep {
         $form.Refresh()
         StartActiveInstallation
     }
-    elseif ($currentStep -eq 4) {
+    elseif ($script:currentStep -eq 4) {
         # Finish clicked!
         if ($chkS4Run.Checked) {
-            $shortcutLnk = Join-Path $selectedPath "launch-echoscribe.bat"
+            $shortcutLnk = Join-Path $script:selectedPath "launch-echoscribe.bat"
             if (Test-Path $shortcutLnk) {
                 # Start in separate process without holding parent cmd console
                 Start-Process "cmd.exe" -ArgumentList "/c start `"`" `"$shortcutLnk`"" -WindowStyle Hidden
@@ -443,18 +443,18 @@ function GoToNextStep {
 }
 
 function GoToPrevStep {
-    if ($currentStep -eq 1) {
+    if ($script:currentStep -eq 1) {
         $panelStep1.Visible = $false
         $panelStep0.Visible = $true
-        $currentStep = 0
+        $script:currentStep = 0
         $btnBack.Enabled = $false
         $btnNext.Enabled = $true
         RefreshStepIndicator
     }
-    elseif ($currentStep -eq 2) {
+    elseif ($script:currentStep -eq 2) {
         $panelStep2.Visible = $false
         $panelStep1.Visible = $true
-        $currentStep = 1
+        $script:currentStep = 1
         $btnNext.Enabled = $chkS1Accept.Checked
         RefreshStepIndicator
     }
@@ -630,7 +630,7 @@ exit /b 0
     # Advance to success slide
     $panelStep3.Visible = $false
     $panelStep4.Visible = $true
-    $currentStep = 4
+    $script:currentStep = 4
     $btnBack.Enabled = $false
     $btnNext.Enabled = $true
     $btnNext.Text = "Finish"
@@ -646,7 +646,7 @@ function MessageBox($msg) {
 function ResetToStep2 {
     $panelStep3.Visible = $false
     $panelStep2.Visible = $true
-    $currentStep = 2
+    $script:currentStep = 2
     $btnBack.Enabled = $true
     $btnNext.Enabled = $true
     $btnCancel.Enabled = $true
