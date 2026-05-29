@@ -121,7 +121,7 @@ echo in the popup. Please complete the setup steps there...
 echo.
 
 :: Disable quick edit mode on cmd console to avoid accidental freezes
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$Console = [Console]; $Handle = (Get-Process -Id $pid).MainWindowHandle; if ($Handle) { # Skip if running headless }"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$Console = [Console]; $Handle = (Get-Process -Id $pid).MainWindowHandle; if ($Handle) { }"
 
 :: Run the setup-wizard.ps1 GUI launcher from local context
 powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0setup-wizard.ps1"

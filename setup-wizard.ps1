@@ -89,7 +89,7 @@ for ($i = 0; $i -lt $stepTitles.Length; $i++) {
     $lbl.Font = $fontSmall
     $lbl.ForeColor = if ($i -eq 0) { $COLOR_ACCENT } else { $COLOR_TEXT_MUTED }
     $lbl.Size = New-Object System.Drawing.Size(160, 25)
-    $lbl.Location = New-Object System.Drawing.Point(20, 200 + ($i * 30))
+    $lbl.Location = New-Object System.Drawing.Point(20, (200 + ($i * 30)))
     $sidebarPanel.Controls.Add($lbl)
     $stepLabels += $lbl
 }
