@@ -366,8 +366,8 @@ $lblS4Success.Location = New-Object System.Drawing.Point(15, 75)
 $panelStep4.Controls.Add($lblS4Success)
 
 $lblS4Bullets = New-Object System.Windows.Forms.Label
-$lblS4Bullets.Text = "✔ Fully functional sandboxed Node.js core`n✔ Fully compiled local production build files`n✔ Registry compliant desktop shortcuts`n✔ Automated Windows program registry entry"
-$lblS4Bullets.Font = $fontSub
+$lblS4Bullets.Text = "[OK] Fully functional sandboxed Node.js core`r`n[OK] Fully compiled local production build files`r`n[OK] Registry compliant desktop shortcuts`r`n[OK] Automated Windows program registry entry"
+$lblS4Bullets.Font = $fontBody
 $lblS4Bullets.ForeColor = $COLOR_TEXT_MUTED
 $lblS4Bullets.Size = New-Object System.Drawing.Size(380, 100)
 $lblS4Bullets.Location = New-Object System.Drawing.Point(25, 175)

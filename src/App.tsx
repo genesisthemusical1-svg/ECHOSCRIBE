@@ -870,8 +870,22 @@ ${noteText}`;
     rec.onerror = (err: any) => {
       console.error("Speech API Error:", err);
       if (err.error !== 'no-speech') {
-        triggerToast(`Dictation issue: ${err.error}`, "error");
-        stopRecordingAction();
+        console.warn(`Local SpeechRecognition fail (${err.error}). Pivoting to persistent Gemini AI Mode...`);
+        triggerToast(`Local browser dictation failed (${err.error}). Auto-switching to Gemini AI Tape Recorder...`, "warning");
+        
+        // Sever handlers to prevent multiple firings
+        rec.onend = null;
+        rec.onerror = null;
+        
+        // Pivot state to Gemini AI mode
+        setRecordingMode('ai');
+        
+        // Feed the active mic stream directly to Gemini Audio Tape Recorder
+        if (activeStreamRef.current) {
+          runMultimodalAudioRecording(activeStreamRef.current);
+        } else {
+          stopRecordingAction();
+        }
       }
     };
 
@@ -919,7 +933,18 @@ ${noteText}`;
     };
 
     recognitionRef.current = rec;
-    rec.start();
+    try {
+      rec.start();
+    } catch (startErr: any) {
+      console.warn("Direct SpeechRecognition activation failed, falling back to Gemini AI Mode:", startErr);
+      triggerToast("Local speech engine failed. Auto-switching to Gemini AI Tape Recorder...", "warning");
+      setRecordingMode('ai');
+      if (activeStreamRef.current) {
+        runMultimodalAudioRecording(activeStreamRef.current);
+      } else {
+        stopRecordingAction();
+      }
+    }
   };
 
   // Multimodal Gemini WAV snippet capture with stream reuse
@@ -1624,6 +1649,38 @@ ${noteText}`;
                 </div>
               )}
 
+              {/* Manual Transcription Mode Segmented Switch */}
+              {!isRecording && !isTranscribingAudio && (
+                <div className="flex bg-[#121214] border border-[#1C1C1F] rounded-full p-0.5" id="engine-mode-pill-toggle">
+                  <button
+                    onClick={() => {
+                      setRecordingMode('realtime');
+                      triggerToast("Switched to Real-time Dictation!", "success");
+                    }}
+                    className={`rounded-full px-3.5 py-1 text-[10px] font-bold tracking-wide transition-all cursor-pointer uppercase ${
+                      recordingMode === 'realtime'
+                        ? 'bg-[#0099FF] text-black shadow-md'
+                        : 'text-zinc-500 hover:text-zinc-200'
+                    }`}
+                  >
+                    ⚡ Real-time
+                  </button>
+                  <button
+                    onClick={() => {
+                      setRecordingMode('ai');
+                      triggerToast("Switched to Gemini AI high-fidelity transcription!", "success");
+                    }}
+                    className={`rounded-full px-3.5 py-1 text-[10px] font-bold tracking-wide transition-all cursor-pointer uppercase ${
+                      recordingMode === 'ai'
+                        ? 'bg-[#0099FF] text-black shadow-md'
+                        : 'text-zinc-500 hover:text-zinc-200'
+                    }`}
+                  >
+                    ✨ Gemini AI
+                  </button>
+                </div>
+              )}
+
               {/* Large central Tactile mic circles */}
               <div className="relative">
                 {isRecording && (
@@ -1654,16 +1711,25 @@ ${noteText}`;
               </div>
 
               <div>
-                <h2 className="text-sm font-semibold text-white tracking-wide">
-                  {isRecording 
-                    ? `Recording transcription (${recordingSeconds}s)...` 
-                    : isTranscribingAudio 
-                      ? 'Decoding speech memo...'
-                      : 'Hold or click to record mic'}
+                <h2 className="text-sm font-semibold text-white tracking-wide text-center">
+                  {isRecording ? (
+                    <span className="flex items-center justify-center gap-1.5">
+                      <span className="inline-block h-2 w-2 rounded-full bg-red-500 animate-pulse" />
+                      <span>
+                        Recording via {recordingMode === 'realtime' ? 'WebSpeech Dictation' : 'Gemini AI Recorder'} ({recordingSeconds}s)...
+                      </span>
+                    </span>
+                  ) : isTranscribingAudio ? (
+                    'Decoding speech memo...'
+                  ) : (
+                    'Hold or click to record mic'
+                  )}
                 </h2>
                 {isRecording && (
-                  <p className="text-[10px] text-zinc-500 mt-0.5 max-w-xs mx-auto">
-                    Speak cleanly. When done record stops, we ask for note title.
+                  <p className="text-[10.5px] text-zinc-400 mt-1 max-w-sm mx-auto font-medium">
+                    {recordingMode === 'realtime' 
+                      ? "⚡ Audio streams live. Standard browser dictionary." 
+                      : "✨ Recorded as a high-fidelity memo, then analyzed & structured beautifully by Gemini 3.5-flash."}
                   </p>
                 )}
               </div>
