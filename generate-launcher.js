@@ -32,6 +32,7 @@ if not exist "notes\\" mkdir "notes"
 :: Configure environment variables for local native running
 set "DESKTOP_MODE=true"
 set "NODE_ENV=production"
+set "NODE_OPTIONS=--max-old-space-size=4096"
 
 :: Check for Edge browser to launch in high-performance app-container mode
 set "EDGE_PATH="

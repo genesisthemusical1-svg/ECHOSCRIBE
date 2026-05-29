@@ -871,7 +871,7 @@ ${noteText}`;
       console.error("Speech API Error:", err);
       if (err.error !== 'no-speech') {
         console.warn(`Local SpeechRecognition fail (${err.error}). Pivoting to persistent Gemini AI Mode...`);
-        triggerToast(`Local browser dictation failed (${err.error}). Auto-switching to Gemini AI Tape Recorder...`, "warning");
+        triggerToast(`Local browser dictation failed (${err.error}). Auto-switching to Gemini AI Tape Recorder...`, "info");
         
         // Sever handlers to prevent multiple firings
         rec.onend = null;
@@ -937,7 +937,7 @@ ${noteText}`;
       rec.start();
     } catch (startErr: any) {
       console.warn("Direct SpeechRecognition activation failed, falling back to Gemini AI Mode:", startErr);
-      triggerToast("Local speech engine failed. Auto-switching to Gemini AI Tape Recorder...", "warning");
+      triggerToast("Local speech engine failed. Auto-switching to Gemini AI Tape Recorder...", "info");
       setRecordingMode('ai');
       if (activeStreamRef.current) {
         runMultimodalAudioRecording(activeStreamRef.current);

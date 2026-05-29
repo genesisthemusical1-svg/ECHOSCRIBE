@@ -48,8 +48,8 @@ $fontBody    = New-Object System.Drawing.Font("Segoe UI", 9.5)
 $fontSmall   = New-Object System.Drawing.Font("Segoe UI", 8.5)
 
 # Status and state variables
-$currentStep = 0
-$selectedPath = $DEFAULT_INSTALL_PATH
+$script:currentStep = 0
+$script:selectedPath = $DEFAULT_INSTALL_PATH
 
 # ------------------------------------------------------------------------
 # STEP CONTAINER PANELS
@@ -477,10 +477,10 @@ function StartActiveInstallation {
 
     # 1. Ensure target directory is prepared
     $lblS3Status.Text = "Creating installation directories..."
-    AppendLog "[DIR] Targeting folder: $selectedPath"
+    AppendLog "[DIR] Targeting folder: $script:selectedPath"
     try {
-        if (!(Test-Path $selectedPath)) {
-            New-Item -ItemType Directory -Path $selectedPath -Force | Out-Null
+        if (!(Test-Path $script:selectedPath)) {
+            New-Item -ItemType Directory -Path $script:selectedPath -Force | Out-Null
         }
         $progressBar.Value = 15
     } catch {
@@ -494,7 +494,7 @@ function StartActiveInstallation {
     # 2. Synchronize portable node sandbox
     $lblS3Status.Text = "Configuring system sandbox environments..."
     $localNodeSource = Join-Path $SOURCE_DIR ".local-node"
-    $localNodeDest = Join-Path $selectedPath ".local-node"
+    $localNodeDest = Join-Path $script:selectedPath ".local-node"
 
     if (Test-Path $localNodeSource) {
         AppendLog "[SANDBOX] Found sandboxed node libraries. Transferring locally..."
@@ -516,7 +516,7 @@ function StartActiveInstallation {
         $srcPath = Join-Path $SOURCE_DIR $item
         if (Test-Path $srcPath) {
             AppendLog "[DEPLOY] Copying $item..."
-            Copy-Item -Path $srcPath -Destination $selectedPath -Recurse -Force -ErrorAction SilentlyContinue | Out-Null
+            Copy-Item -Path $srcPath -Destination $script:selectedPath -Recurse -Force -ErrorAction SilentlyContinue | Out-Null
             $copiedCount++
         }
         $progressBar.Value = 35 + [int]((30 / $itemsToCopy.Length) * $copiedCount)
@@ -527,8 +527,8 @@ function StartActiveInstallation {
 
     # 4. Generate visual shortcuts
     $lblS3Status.Text = "Establishing program execution lines..."
-    $launchScript = Join-Path $selectedPath "launch-echoscribe.bat"
-    $logoIcon = Join-Path $selectedPath "app-icon.ico"
+    $launchScript = Join-Path $script:selectedPath "launch-echoscribe.bat"
+    $logoIcon = Join-Path $script:selectedPath "app-icon.ico"
     
     AppendLog "[SHORTCUT] Pinning shortcut entry directly to Microsoft Windows Desktop..."
     try {
@@ -536,7 +536,7 @@ function StartActiveInstallation {
         $wshShell = New-Object -ComObject WScript.Shell
         $shortcut = $wshShell.CreateShortcut($desktopPath)
         $shortcut.TargetPath = $launchScript
-        $shortcut.WorkingDirectory = $selectedPath
+        $shortcut.WorkingDirectory = $script:selectedPath
         $shortcut.IconLocation = "$logoIcon,0"
         $shortcut.Description = $APP_FULL_NAME
         $shortcut.Save()
@@ -554,7 +554,7 @@ function StartActiveInstallation {
         $startMenuLnk = Join-Path $startMenuPrograms "EchoScribe.lnk"
         $shortcutSM = $wshShell.CreateShortcut($startMenuLnk)
         $shortcutSM.TargetPath = $launchScript
-        $shortcutSM.WorkingDirectory = $selectedPath
+        $shortcutSM.WorkingDirectory = $script:selectedPath
         $shortcutSM.IconLocation = "$logoIcon,0"
         $shortcutSM.Description = $APP_FULL_NAME
         $shortcutSM.Save()
@@ -570,7 +570,7 @@ function StartActiveInstallation {
     AppendLog "[UNINSTALLER] Fabricating standard setup components..."
     
     # Create the beautiful uninstaller batch script itself inside the program directory for easy execution
-    $uninstallerLnk = Join-Path $selectedPath "uninstall-echoscribe.bat"
+    $uninstallerLnk = Join-Path $script:selectedPath "uninstall-echoscribe.bat"
     $uninstallScriptContents = @"
 @echo off
 title EchoScribe Uninstaller Support
@@ -597,7 +597,7 @@ exit /b 0
     Set-Content -Path $uninstallerLnk -Value $uninstallScriptContents
     
     # We will generate uninstall-wizard.ps1 during this deployment to reside alongside
-    $uninstallWizardPath = Join-Path $selectedPath "uninstall-wizard.ps1"
+    $uninstallWizardPath = Join-Path $script:selectedPath "uninstall-wizard.ps1"
     Copy-Item -Path (Join-Path $SOURCE_DIR "uninstall-wizard.ps1") -Destination $uninstallWizardPath -Force -ErrorAction SilentlyContinue
 
     # 6. Windows Registry Integration (Enables Standard Add/Remove Programs integration)
@@ -614,7 +614,7 @@ exit /b 0
         New-ItemProperty -Path $registryRoot -Name "Publisher" -Value "EchoScribe Systems" -PropertyType String -Force | Out-Null
         New-ItemProperty -Path $registryRoot -Name "UninstallString" -Value "`"$uninstallerLnk`"" -PropertyType String -Force | Out-Null
         New-ItemProperty -Path $registryRoot -Name "DisplayIcon" -Value $logoIcon -PropertyType String -Force | Out-Null
-        New-ItemProperty -Path $registryRoot -Name "InstallLocation" -Value $selectedPath -PropertyType String -Force | Out-Null
+        New-ItemProperty -Path $registryRoot -Name "InstallLocation" -Value $script:selectedPath -PropertyType String -Force | Out-Null
         New-ItemProperty -Path $registryRoot -Name "URLInfoAbout" -Value "http://localhost:3000" -PropertyType String -Force | Out-Null
         New-ItemProperty -Path $registryRoot -Name "NoModify" -Value 1 -PropertyType DWord -Force | Out-Null
         New-ItemProperty -Path $registryRoot -Name "NoRepair" -Value 1 -PropertyType DWord -Force | Out-Null

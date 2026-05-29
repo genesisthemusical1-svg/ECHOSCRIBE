@@ -12,6 +12,9 @@ echo This console initializes the assets first, then triggers the graphical
 echo Setup Wizard to let you choose your installation location.
 echo.
 
+:: Boost Node memory allocation limits to prevent JavaScript heap out of memory errors
+set "NODE_OPTIONS=--max-old-space-size=4096"
+
 :: ------------------------------------------------------------------------
 :: STEP 1: DETECT OR INTEGRATE PORTABLE NODE.JS RUNTIME ENVIRONMENT
 :: ------------------------------------------------------------------------
