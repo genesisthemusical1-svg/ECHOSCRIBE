@@ -1518,10 +1518,10 @@ ${noteText}`;
                       type="button"
                       disabled={isRefining || !noteText}
                       onClick={() => applyAIRefinement('raw')}
-                      className="px-2.5 py-1.5 rounded bg-zinc-900 hover:bg-zinc-850 hover:text-[#0099FF] hover:border-[#0099FF]/30 text-[10px] text-zinc-300 border border-zinc-800 transition-colors cursor-pointer disabled:opacity-30 inline-flex items-center gap-1.5"
+                      className="group px-2.5 py-1.5 rounded bg-zinc-900 hover:bg-zinc-850 hover:text-[#0099FF] hover:border-[#0099FF]/30 text-[10px] text-zinc-300 border border-zinc-800 transition-colors cursor-pointer disabled:opacity-30 inline-flex items-center gap-1.5"
                       title="Removes um/ah filler words, stutters, and fixes punctuation instantly"
                     >
-                      <Sparkles className="h-4 w-4" />
+                      <Sparkles className="h-4 w-4 text-zinc-400 group-hover:text-[#0099FF] transition-colors" />
                       <span>Clean Grammar</span>
                     </button>
 
@@ -1529,10 +1529,10 @@ ${noteText}`;
                       type="button"
                       disabled={isRefining || !noteText}
                       onClick={() => applyAIRefinement('bullet_points')}
-                      className="px-2.5 py-1.5 rounded bg-zinc-900 hover:bg-zinc-850 hover:text-[#0099FF] hover:border-[#0099FF]/30 text-[10px] text-zinc-300 border border-zinc-800 transition-colors cursor-pointer disabled:opacity-30 inline-flex items-center gap-1.5"
+                      className="group px-2.5 py-1.5 rounded bg-zinc-900 hover:bg-zinc-850 hover:text-[#0099FF] hover:border-[#0099FF]/30 text-[10px] text-zinc-300 border border-zinc-800 transition-colors cursor-pointer disabled:opacity-30 inline-flex items-center gap-1.5"
                       title="Instantly group thoughts of raw record into bullet lists"
                     >
-                      <List className="h-4 w-4" />
+                      <List className="h-4 w-4 text-zinc-400 group-hover:text-[#0099FF] transition-colors" />
                       <span>Bullet Points</span>
                     </button>
 
@@ -1540,10 +1540,10 @@ ${noteText}`;
                       type="button"
                       disabled={isRefining || !noteText}
                       onClick={() => applyAIRefinement('checklist')}
-                      className="px-2.5 py-1.5 rounded bg-zinc-900 hover:bg-zinc-850 hover:text-[#0099FF] hover:border-[#0099FF]/30 text-[10px] text-zinc-300 border border-zinc-800 transition-colors cursor-pointer disabled:opacity-30 inline-flex items-center gap-1.5"
+                      className="group px-2.5 py-1.5 rounded bg-zinc-900 hover:bg-zinc-850 hover:text-[#0099FF] hover:border-[#0099FF]/30 text-[10px] text-zinc-300 border border-zinc-800 transition-colors cursor-pointer disabled:opacity-30 inline-flex items-center gap-1.5"
                       title="Build checklist todo items"
                     >
-                      <CheckSquare className="h-4 w-4" />
+                      <CheckSquare className="h-4 w-4 text-zinc-400 group-hover:text-[#0099FF] transition-colors" />
                       <span>Checklist</span>
                     </button>
 
@@ -1551,10 +1551,10 @@ ${noteText}`;
                       type="button"
                       disabled={isRefining || !noteText}
                       onClick={() => applyAIRefinement('meeting_minutes')}
-                      className="px-2.5 py-1.5 rounded bg-zinc-900 hover:bg-zinc-850 hover:text-[#0099FF] hover:border-[#0099FF]/30 text-[10px] text-zinc-300 border border-zinc-800 transition-colors cursor-pointer disabled:opacity-30 inline-flex items-center gap-1.5"
+                      className="group px-2.5 py-1.5 rounded bg-zinc-900 hover:bg-zinc-850 hover:text-[#0099FF] hover:border-[#0099FF]/30 text-[10px] text-zinc-300 border border-zinc-800 transition-colors cursor-pointer disabled:opacity-30 inline-flex items-center gap-1.5"
                       title="Draft agenda highlights and task items"
                     >
-                      <FileText className="h-4 w-4" />
+                      <FileText className="h-4 w-4 text-zinc-400 group-hover:text-[#0099FF] transition-colors" />
                       <span>Minutes</span>
                     </button>
 

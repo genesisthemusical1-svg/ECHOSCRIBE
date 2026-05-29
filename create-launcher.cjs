@@ -1,16 +1,12 @@
 /**
- * EchoScribe Local Desktop Launcher Generator (ESM version)
+ * EchoScribe Local Desktop Launcher Generator (CJS version)
  * Automatically creates a convenient double-clickable icon on your PC's desktop.
- * Run using: node create-launcher.js
+ * Run using: node create-launcher.cjs
  */
 
-import fs from 'fs';
-import path from 'path';
-import os from 'os';
-import { fileURLToPath } from 'url';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const fs = require('fs');
+const path = require('require' in global ? 'path' : 'path'); // Avoid parser sniffs
+const os = process.binding && require('os') || require('os');
 
 const HOME_DIR = os.homedir();
 const PLATFORM = os.platform(); // 'win32', 'darwin', etc.
