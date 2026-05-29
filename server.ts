@@ -13,6 +13,10 @@ import { Note } from "./src/types.js"; // Use js extension for esm bundle safety
 const app = express();
 const PORT = 3000;
 
+// Portable Desktop Heartbeat State
+let lastHeartbeat = Date.now();
+let hasReceivedFirstHeartbeat = false;
+
 // Enable JSON body sizes for base64 audio transfers
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ limit: "50mb", extended: true }));
@@ -159,6 +163,13 @@ app.get("/api/health", (req, res) => {
     notesDir: getNotesDir(),
     obsidianPath: obsidianPathSetting,
   });
+});
+
+// Standalone Desktop Heartbeat ping endpoint
+app.post("/api/heartbeat", (req, res) => {
+  lastHeartbeat = Date.now();
+  hasReceivedFirstHeartbeat = true;
+  res.json({ success: true, updated: lastHeartbeat });
 });
 
 // Settings GET/POST for local Obsidian vault / custom path configurations
@@ -370,6 +381,27 @@ async function bootstrap() {
 
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`Server is running actively at http://localhost:${PORT}`);
+
+    // Standalone Desktop Auto-shutdown checker (watchdog)
+    if (process.env.DESKTOP_MODE === "true") {
+      console.log("[DESKTOP] Watchdog initiated. Server will auto-terminate when app window closes.");
+      
+      // Let's also check if they haven't connected at all after 30 seconds of starting
+      setTimeout(() => {
+        if (!hasReceivedFirstHeartbeat) {
+          console.log("[DESKTOP] Initial connection timeout. No client connected after 30s. Shutting down...");
+          process.exit(0);
+        }
+      }, 30000);
+
+      setInterval(() => {
+        const idleTime = Date.now() - lastHeartbeat;
+        if (hasReceivedFirstHeartbeat && idleTime > 15000) {
+          console.log(`[DESKTOP] Standing window closed for ${Math.round(idleTime / 1000)}s. Exiting process...`);
+          process.exit(0);
+        }
+      }, 5000);
+    }
   });
 }
 

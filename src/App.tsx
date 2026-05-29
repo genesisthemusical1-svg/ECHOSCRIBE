@@ -190,6 +190,16 @@ export default function App() {
     );
   }, []);
 
+  // Standalone Desktop Window Heartbeat (holds server process alive while UI is engaged)
+  useEffect(() => {
+    const sendPulse = () => {
+      fetch('/api/heartbeat', { method: 'POST' }).catch(() => {});
+    };
+    sendPulse();
+    const interval = setInterval(sendPulse, 5000);
+    return () => clearInterval(interval);
+  }, []);
+
   const fetchSettings = async () => {
     try {
       const res = await fetch('/api/settings');
